@@ -3,10 +3,12 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { downsampleHistory, RAW_HISTORY_WINDOW_DAYS } from './events.js';
 import type { Storage, VehicleConfig, SensorState, HistorySample } from './types.js';
 
 /** Hard cap on samples kept per device, regardless of retention window (memory/file-size guard). */
 const MAX_HISTORY_SAMPLES = 5000;
+const RAW_WINDOW_MS = RAW_HISTORY_WINDOW_DAYS * 86_400_000;
 
 interface Db {
   vehicles: Record<string, VehicleConfig>;
@@ -34,8 +36,10 @@ export class MemoryStorage implements Storage {
     if (retentionMs <= 0) return; // tier keeps no history
     const key = `${vid}/${device}`;
     const cutoff = sample.at - retentionMs;
-    const list = (this.db.history[key] ?? []).filter(s => s.at >= cutoff);
+    let list = (this.db.history[key] ?? []).filter(s => s.at >= cutoff);
     list.push(sample);
+    // Downsample older-than-raw-window samples to hourly so long-term history stays small.
+    list = downsampleHistory(list, sample.at, RAW_WINDOW_MS);
     // Enforce the hard cap (keep the newest), then persist.
     this.db.history[key] = list.length > MAX_HISTORY_SAMPLES ? list.slice(list.length - MAX_HISTORY_SAMPLES) : list;
     await this.persist();

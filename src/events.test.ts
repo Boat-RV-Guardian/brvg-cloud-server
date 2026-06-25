@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   isFloodShutoff, isTelemetry, extractSensorStateExtras, sanitizeDevice,
   telemetryResolutionSecForTier, shouldPersistTelemetry,
+  historyRetentionDaysForTier, downsampleHistory,
 } from './events.js';
+
+const DAY = 86_400_000; const HOUR = 3_600_000;
 
 describe('isFloodShutoff', () => {
   it('fires on real flood/leak/alarm, not on cleared or telemetry', () => {
@@ -38,6 +41,36 @@ describe('telemetry throttle helpers', () => {
     expect(shouldPersistTelemetry(1_000_000, null, 300)).toBe(true);
     expect(shouldPersistTelemetry(1_300_000, 1_000_000, 300)).toBe(true);
     expect(shouldPersistTelemetry(1_060_000, 1_000_000, 300)).toBe(false);
+  });
+});
+
+describe('historyRetentionDaysForTier', () => {
+  it('maps tiers; legacy→premium', () => {
+    expect(historyRetentionDaysForTier('free')).toBe(0);
+    expect(historyRetentionDaysForTier('basic')).toBe(30);
+    expect(historyRetentionDaysForTier('premium')).toBe(1095);
+    expect(historyRetentionDaysForTier(undefined)).toBe(1095);
+  });
+});
+
+describe('downsampleHistory', () => {
+  it('keeps recent samples raw, collapses old to one per hour', () => {
+    const now = 100 * DAY;
+    const samples = [
+      { at: now - 30 * DAY, extra: { v: 'a' } },       // old, hour X
+      { at: now - 30 * DAY + 5 * 60_000, extra: { v: 'b' } }, // old, SAME hour X → collapsed (b wins, latest)
+      { at: now - 30 * DAY + HOUR + 1000, extra: { v: 'c' } }, // old, hour X+1
+      { at: now - 60_000, extra: { v: 'd' } },         // recent (within 7d) → kept
+      { at: now, extra: { v: 'e' } },                  // recent → kept
+    ];
+    const out = downsampleHistory(samples, now, 7 * DAY);
+    expect(out.map(s => s.extra.v)).toEqual(['b', 'c', 'd', 'e']); // one per old hour + both recent
+  });
+
+  it('is a no-op when everything is within the raw window', () => {
+    const now = 10 * DAY;
+    const samples = [{ at: now - HOUR, extra: {} }, { at: now, extra: {} }];
+    expect(downsampleHistory(samples, now, 7 * DAY)).toHaveLength(2);
   });
 });
 

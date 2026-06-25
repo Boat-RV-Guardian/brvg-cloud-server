@@ -66,3 +66,23 @@ export function historyRetentionDaysForTier(tier: string | null | undefined): nu
   if (tier === 'free' || tier === 'basic' || tier === 'premium') return HISTORY_RETENTION_DAYS[tier];
   return HISTORY_RETENTION_DAYS.premium; // legacy/unset → grandfathered to premium
 }
+
+/** Keep raw (per-tick) samples for this many days; older samples are collapsed to hourly. */
+export const RAW_HISTORY_WINDOW_DAYS = 7;
+const HOUR_MS = 3_600_000;
+
+/**
+ * Collapse history to bound long-term storage (cost analysis §4): samples newer than `rawWindowMs`
+ * are kept as-is; older ones are downsampled to ONE per hour (the latest in each hour bucket). Pure;
+ * input may be in any order, output is oldest-first.
+ */
+export function downsampleHistory<T extends { at: number }>(samples: T[], nowMs: number, rawWindowMs: number): T[] {
+  const cutoff = nowMs - rawWindowMs;
+  const recent: T[] = [];
+  const byHour = new Map<number, T>();
+  for (const s of [...samples].sort((a, b) => a.at - b.at)) {
+    if (s.at >= cutoff) recent.push(s);
+    else byHour.set(Math.floor(s.at / HOUR_MS), s); // oldest-first → last write per hour wins
+  }
+  return [...byHour.values(), ...recent].sort((a, b) => a.at - b.at);
+}

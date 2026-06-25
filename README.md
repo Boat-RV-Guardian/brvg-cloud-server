@@ -52,8 +52,8 @@ npm run build && npm start        # compiled
 
 ## Status
 
-**v0.2.** Core + events + Node adapter + file storage + admin + Docker + tests, plus **tier-based
-history** (telemetry samples retained per tier — free 0 / basic 30d / premium ~3y — with the admin
-`retentionDays` setting as a self-host cap) and a `GET /api/history?vid=&device=&since=` read endpoint.
-Roadmap: SQLite/D1 storage, hourly downsampling for long-term history, a Cloudflare adapter sharing
-this core, and unifying with the hosted worker. See the main repo's `docs/SELF_HOST.md` + `open-tasks.md`.
+**v0.3.** Core + events + Node adapter + file storage + admin + Docker + tests; **tier-based history**
+(free 0 / basic 30d / premium ~3y, admin `retentionDays` cap) with `GET /api/history`; and **hourly
+downsampling** — raw samples for the last 7 days, then one-per-hour for older data so long-term
+history stays small (cost analysis §4). Roadmap: SQLite/D1 storage, a Cloudflare adapter sharing this
+core, and unifying with the hosted worker. See the main repo's `docs/SELF_HOST.md` + `open-tasks.md`.
