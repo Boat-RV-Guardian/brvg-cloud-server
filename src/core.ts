@@ -5,6 +5,7 @@
 import {
   isFloodShutoff, isTelemetry, extractSensorStateExtras, sanitizeDevice,
   telemetryResolutionSecForTier, shouldPersistTelemetry, TELEMETRY_RESOLUTION_SEC,
+  historyRetentionDaysForTier,
 } from './events.js';
 import type { Deps, WebhookResult, ShutoffResult } from './types.js';
 
@@ -52,6 +53,17 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
   }
   if (persisted) {
     await storage.putSensorState(input.vid, device, { event, at: nowMs, extra });
+    // Append a history sample for paid tiers (retention enforced in storage). Only when there's
+    // telemetry to chart, and only on a persisted tick (so history honors the same throttle). The
+    // self-host admin's `retentionDays` setting, if set, CAPS the tier window (a storage-limit knob).
+    if (telemetry && Object.keys(extra).length > 0) {
+      const tierDays = historyRetentionDaysForTier(vehicle.tier);
+      const adminCap = Number(await storage.getSetting('retentionDays')) || 0;
+      const retentionDays = adminCap > 0 ? Math.min(tierDays, adminCap) : tierDays;
+      if (retentionDays > 0) {
+        await storage.appendHistory(input.vid, device, { at: nowMs, extra }, retentionDays * 86_400_000);
+      }
+    }
   }
 
   // SAFETY: on a real flood/leak, close every configured LinkTap valve (cloud fallback for when no

@@ -54,3 +54,15 @@ export function shouldPersistTelemetry(nowMs: number, lastAtMs: number | null | 
   if (lastAtMs == null || !Number.isFinite(lastAtMs) || !Number.isFinite(nowMs)) return true;
   return nowMs - lastAtMs >= resolutionSec * 1000;
 }
+
+// Hosted history retention window per tier (mirrors the app's entitlement matrix). Free keeps none.
+export const HISTORY_RETENTION_DAYS: Record<'free' | 'basic' | 'premium', number> = {
+  free: 0,
+  basic: 30,
+  premium: 1095,
+};
+
+export function historyRetentionDaysForTier(tier: string | null | undefined): number {
+  if (tier === 'free' || tier === 'basic' || tier === 'premium') return HISTORY_RETENTION_DAYS[tier];
+  return HISTORY_RETENTION_DAYS.premium; // legacy/unset → grandfathered to premium
+}

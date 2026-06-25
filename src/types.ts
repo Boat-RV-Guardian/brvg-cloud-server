@@ -25,6 +25,12 @@ export interface SensorState {
   extra: Record<string, string>; // embedded telemetry (v, vraw, tC, …)
 }
 
+/** One historical telemetry sample (for charts / trends on paid tiers). */
+export interface HistorySample {
+  at: number; // epoch ms
+  extra: Record<string, string>;
+}
+
 export interface ShutoffResult {
   ok: boolean;
   valves?: number;
@@ -36,6 +42,10 @@ export interface Storage {
   getVehicle(vid: string): Promise<VehicleConfig | null>;
   getSensorState(vid: string, device: string): Promise<SensorState | null>;
   putSensorState(vid: string, device: string, state: SensorState): Promise<void>;
+  /** Append a history sample, dropping anything older than `retentionMs` (0 = keep none). */
+  appendHistory(vid: string, device: string, sample: HistorySample, retentionMs: number): Promise<void>;
+  /** History samples for a device, optionally only those at/after `sinceMs`, oldest-first. */
+  getHistory(vid: string, device: string, sinceMs?: number): Promise<HistorySample[]>;
   /** FCM registration token for a user (null if none). */
   getUserFcmToken(uid: string): Promise<string | null>;
   /** Instance settings (api key, retention window, etc.). */
