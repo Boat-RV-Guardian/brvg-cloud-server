@@ -3,16 +3,20 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { Storage, VehicleConfig, SensorState } from './types.js';
+import type { Storage, VehicleConfig, SensorState, HistorySample } from './types.js';
+
+/** Hard cap on samples kept per device, regardless of retention window (memory/file-size guard). */
+const MAX_HISTORY_SAMPLES = 5000;
 
 interface Db {
   vehicles: Record<string, VehicleConfig>;
   sensorState: Record<string, SensorState>; // key: `${vid}/${device}`
+  history: Record<string, HistorySample[]>; // key: `${vid}/${device}`, oldest-first
   userTokens: Record<string, string>; // uid -> fcmToken
   settings: Record<string, string>;
 }
 
-const emptyDb = (): Db => ({ vehicles: {}, sensorState: {}, userTokens: {}, settings: {} });
+const emptyDb = (): Db => ({ vehicles: {}, sensorState: {}, history: {}, userTokens: {}, settings: {} });
 
 export class MemoryStorage implements Storage {
   protected db: Db;
@@ -24,6 +28,22 @@ export class MemoryStorage implements Storage {
   async putSensorState(vid: string, device: string, state: SensorState) {
     this.db.sensorState[`${vid}/${device}`] = state;
     await this.persist();
+  }
+
+  async appendHistory(vid: string, device: string, sample: HistorySample, retentionMs: number) {
+    if (retentionMs <= 0) return; // tier keeps no history
+    const key = `${vid}/${device}`;
+    const cutoff = sample.at - retentionMs;
+    const list = (this.db.history[key] ?? []).filter(s => s.at >= cutoff);
+    list.push(sample);
+    // Enforce the hard cap (keep the newest), then persist.
+    this.db.history[key] = list.length > MAX_HISTORY_SAMPLES ? list.slice(list.length - MAX_HISTORY_SAMPLES) : list;
+    await this.persist();
+  }
+
+  async getHistory(vid: string, device: string, sinceMs?: number) {
+    const list = this.db.history[`${vid}/${device}`] ?? [];
+    return sinceMs == null ? list.slice() : list.filter(s => s.at >= sinceMs);
   }
   async getUserFcmToken(uid: string) { return this.db.userTokens[uid] ?? null; }
   async getSetting(key: string) { return this.db.settings[key] ?? null; }

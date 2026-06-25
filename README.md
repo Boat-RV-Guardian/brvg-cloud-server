@@ -52,6 +52,8 @@ npm run build && npm start        # compiled
 
 ## Status
 
-**v0.1 — first increment.** Core + events + Node adapter + file storage + admin + Docker + tests.
-Roadmap: SQLite/D1 storage, history retention pruning, a Cloudflare adapter sharing this core, and
-unifying with the hosted worker. See the main repo's `docs/SELF_HOST.md` + `open-tasks.md` (Task 7).
+**v0.2.** Core + events + Node adapter + file storage + admin + Docker + tests, plus **tier-based
+history** (telemetry samples retained per tier — free 0 / basic 30d / premium ~3y — with the admin
+`retentionDays` setting as a self-host cap) and a `GET /api/history?vid=&device=&since=` read endpoint.
+Roadmap: SQLite/D1 storage, hourly downsampling for long-term history, a Cloudflare adapter sharing
+this core, and unifying with the hosted worker. See the main repo's `docs/SELF_HOST.md` + `open-tasks.md`.

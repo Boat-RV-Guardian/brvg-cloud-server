@@ -77,6 +77,29 @@ describe('telemetry', () => {
   });
 });
 
+describe('history', () => {
+  it('appends telemetry samples for paid tiers', async () => {
+    await handleShellyWebhook(input({ event: 'voltmeter.measurement', extra: { v: '12.6' } } as any), deps());
+    nowMs += 90_000;
+    await handleShellyWebhook(input({ event: 'voltmeter.measurement', extra: { v: '12.4' } } as any), deps());
+    const h = await storage.getHistory('v1', 'dev1');
+    expect(h).toHaveLength(2);
+    expect(h[0].extra.v).toBe('12.6');
+    expect(h[1].extra.v).toBe('12.4');
+  });
+
+  it('keeps NO history for the free tier', async () => {
+    storage.putVehicle({ vid: 'v1', tier: 'free', allowedUsers: ['u1'] });
+    await handleShellyWebhook(input({ event: 'voltmeter.measurement', extra: { v: '12.6' } } as any), deps());
+    expect(await storage.getHistory('v1', 'dev1')).toHaveLength(0);
+  });
+
+  it('does not append history for non-telemetry events', async () => {
+    await handleShellyWebhook(input({ event: 'flood.alarm' }), deps());
+    expect(await storage.getHistory('v1', 'dev1')).toHaveLength(0);
+  });
+});
+
 describe('non-flood alerts', () => {
   it('pushes a plain sensor alert without shutoff', async () => {
     const r = await handleShellyWebhook(input({ event: 'button.push' }), deps());

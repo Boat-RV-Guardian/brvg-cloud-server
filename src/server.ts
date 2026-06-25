@@ -58,6 +58,19 @@ const server = createServer(async (req, res) => {
       return json(res, code, result);
     }
 
+    // History read (charts/trends). Same API-key auth as webhooks.
+    if (url.pathname === '/api/history') {
+      const requiredKey = await storage.getSetting('apiKey');
+      if (requiredKey && url.searchParams.get('key') !== requiredKey) return json(res, 401, { status: 'unauthorized' });
+      const vid = url.searchParams.get('vid');
+      const device = url.searchParams.get('device');
+      if (!vid || !device) return json(res, 400, { error: 'vid + device required' });
+      const sinceParam = url.searchParams.get('since');
+      const since = sinceParam ? Number(sinceParam) : undefined;
+      const samples = await storage.getHistory(vid, device, Number.isFinite(since) ? since : undefined);
+      return json(res, 200, { vid, device, samples });
+    }
+
     // Admin — basic auth on everything under /admin.
     if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
       if (!checkAdminAuth(req.headers.authorization)) {
