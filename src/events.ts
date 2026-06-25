@@ -1,0 +1,56 @@
+// Pure event classification + telemetry throttling. Ported verbatim (behavior) from the Cloudflare
+// worker's events.ts so the two stay in lockstep until a shared package unifies them. No I/O here.
+
+export const FLOOD_EVENT_RE = /flood|leak|alarm/i;
+export const TELEMETRY_EVENT_RE = /\.(measurement|change)$/i;
+export const ALARM_CLEARED_RE = /(?:_off|\.off)$/i;
+
+/** Periodic telemetry that should be cached but never pushed/triggered. */
+export function isTelemetry(event: string): boolean {
+  return TELEMETRY_EVENT_RE.test(event);
+}
+
+/** "Cleared/off" variant of an alarm (e.g. flood.alarm_off). */
+export function isAlarmCleared(event: string): boolean {
+  return ALARM_CLEARED_RE.test(event);
+}
+
+/** True only for a real flood/leak alarm that should close the valve. */
+export function isFloodShutoff(event: string): boolean {
+  return FLOOD_EVENT_RE.test(event) && !isAlarmCleared(event) && !isTelemetry(event);
+}
+
+export const RESERVED_PARAMS: ReadonlySet<string> = new Set(['vid', 'event', 'device', 'key']);
+
+/** Extract device-embedded telemetry params (skip routing/auth params + unset placeholders). */
+export function extractSensorStateExtras(searchParams: Iterable<[string, string]>): Record<string, string> {
+  const extra: Record<string, string> = {};
+  for (const [k, val] of searchParams) {
+    if (RESERVED_PARAMS.has(k)) continue;
+    if (val === '' || val === 'null') continue;
+    extra[k] = val;
+  }
+  return extra;
+}
+
+/** Sanitize a device id for use as a storage key. */
+export function sanitizeDevice(device: string | null | undefined): string {
+  return (device || 'unknown').replace(/[\/#?]/g, '_');
+}
+
+// — Tier-aware telemetry persistence throttle (cost lever; mirrors the app's entitlement matrix). —
+export const TELEMETRY_RESOLUTION_SEC: Record<'free' | 'basic' | 'premium', number> = {
+  free: 1800,
+  basic: 300,
+  premium: 60,
+};
+
+export function telemetryResolutionSecForTier(tier: string | null | undefined): number {
+  if (tier === 'free' || tier === 'basic' || tier === 'premium') return TELEMETRY_RESOLUTION_SEC[tier];
+  return TELEMETRY_RESOLUTION_SEC.premium;
+}
+
+export function shouldPersistTelemetry(nowMs: number, lastAtMs: number | null | undefined, resolutionSec: number): boolean {
+  if (lastAtMs == null || !Number.isFinite(lastAtMs) || !Number.isFinite(nowMs)) return true;
+  return nowMs - lastAtMs >= resolutionSec * 1000;
+}
