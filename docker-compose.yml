@@ -1,0 +1,21 @@
+services:
+  brvg-cloud-server:
+    build: .
+    image: brvg-cloud-server
+    ports:
+      - "3030:3030"
+    environment:
+      # Required to expose /admin. Pick a strong value.
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?set ADMIN_PASSWORD}"
+      # Optional: enable FCM push (same Firebase project as the app). Omit to disable push.
+      FIREBASE_PROJECT_ID: "${FIREBASE_PROJECT_ID:-}"
+      FIREBASE_CLIENT_EMAIL: "${FIREBASE_CLIENT_EMAIL:-}"
+      FIREBASE_PRIVATE_KEY: "${FIREBASE_PRIVATE_KEY:-}"
+      DB_PATH: /app/data/brvg.json
+      PORT: "3030"
+    volumes:
+      - brvg-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  brvg-data:

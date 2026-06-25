@@ -1,0 +1,99 @@
+// Transport-agnostic webhook handler. The Node adapter (and, later, a Cloudflare adapter) build the
+// `Deps` and call this. All I/O is injected, so the safety-critical decision logic is fully unit-
+// testable without standing up a network, DB, or device — see core.test.ts.
+
+import {
+  isFloodShutoff, isTelemetry, extractSensorStateExtras, sanitizeDevice,
+  telemetryResolutionSecForTier, shouldPersistTelemetry, TELEMETRY_RESOLUTION_SEC,
+} from './events.js';
+import type { Deps, WebhookResult, ShutoffResult } from './types.js';
+
+export interface ShellyWebhookInput {
+  vid: string | null;
+  event: string;
+  device: string | null;
+  /** Telemetry params the device embedded (everything except vid/event/device/key). */
+  params: Iterable<[string, string]>;
+  /** Auth key from the request (?key= or header), or null. */
+  key?: string | null;
+}
+
+/**
+ * Handle a Shelly sensor webhook: cache state, on a real flood close the LinkTap valve, and push an
+ * alert to the vehicle's users. Mirrors the Cloudflare worker, but with injected deps + local auth.
+ */
+export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps): Promise<WebhookResult> {
+  const { storage, notify, linktap, now, log } = deps;
+
+  // Auth: if the instance has an API key configured, the request must present it. (Self-host servers
+  // are public endpoints; the key is how a device proves it belongs to this instance.)
+  const requiredKey = await storage.getSetting('apiKey');
+  if (requiredKey && input.key !== requiredKey) {
+    return { status: 'unauthorized' };
+  }
+
+  if (!input.vid) return { status: 'missing_vid' };
+  const vehicle = await storage.getVehicle(input.vid);
+  if (!vehicle) return { status: 'vehicle_not_found' };
+
+  const event = input.event || 'sensor alert';
+  const device = sanitizeDevice(input.device);
+  const isFlood = isFloodShutoff(event);
+  const telemetry = isTelemetry(event);
+  const nowMs = now();
+  const extra = extractSensorStateExtras(input.params);
+
+  // Tier-aware persistence throttle — telemetry only; flood/alarm always persist.
+  let persisted = true;
+  const resolutionSec = telemetryResolutionSecForTier(vehicle.tier);
+  if (telemetry && resolutionSec > TELEMETRY_RESOLUTION_SEC.premium) {
+    const prev = await storage.getSensorState(input.vid, device);
+    persisted = shouldPersistTelemetry(nowMs, prev?.at ?? null, resolutionSec);
+  }
+  if (persisted) {
+    await storage.putSensorState(input.vid, device, { event, at: nowMs, extra });
+  }
+
+  // SAFETY: on a real flood/leak, close every configured LinkTap valve (cloud fallback for when no
+  // local app is running). Redundant closes are idempotent. Never throttled.
+  let shutoff: ShutoffResult | null = null;
+  if (isFlood) {
+    const lt = vehicle.linktap;
+    const taplinkers = (lt?.taplinkerIds || []).filter(Boolean);
+    if (lt?.username && lt.apiKey && lt.gatewayId && taplinkers.length) {
+      let okCount = 0; let lastErr = '';
+      for (const tap of taplinkers) {
+        try {
+          await linktap.shutoff({ username: lt.username, apiKey: lt.apiKey, gatewayId: lt.gatewayId, taplinkerId: tap });
+          okCount++;
+        } catch (e: any) {
+          lastErr = String(e?.message || e);
+        }
+      }
+      shutoff = okCount === taplinkers.length
+        ? { ok: okCount > 0, valves: okCount }
+        : { ok: okCount > 0, valves: okCount, error: lastErr };
+    } else {
+      shutoff = { ok: false, error: 'no LinkTap config' };
+    }
+    log?.(`flood event ${event} on ${input.vid}: shutoff ${JSON.stringify(shutoff)}`);
+  }
+
+  // Push: real alerts only (telemetry never pushes). Count real FCM acceptances.
+  let notified = 0; let pushFailed = 0;
+  if (!telemetry) {
+    const name = vehicle.name || 'your vehicle';
+    const title = `🚨 ${name}`;
+    const body = isFlood
+      ? (shutoff?.ok ? 'Flood detected — valve closed automatically.' : `Flood detected: ${event}`)
+      : `Sensor alert: ${event}`;
+    for (const uid of vehicle.allowedUsers) {
+      const token = await storage.getUserFcmToken(uid);
+      if (token) {
+        (await notify.sendPush(token, title, body)) ? notified++ : pushFailed++;
+      }
+    }
+  }
+
+  return { status: 'ok', event, telemetry, persisted, notified, pushFailed, shutoff };
+}

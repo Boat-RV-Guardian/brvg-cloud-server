@@ -1,0 +1,28 @@
+{
+  "name": "brvg-cloud-server",
+  "version": "0.1.0",
+  "private": true,
+  "license": "GPL-3.0",
+  "description": "Self-hostable cloud server for Boat & RV Guardian — receives Shelly webhooks, relays LinkTap shutoff, sends push alerts. Node/Docker counterpart to the Cloudflare worker.",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "node --import tsx/esm src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "jose": "^6.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.9"
+  }
+}
