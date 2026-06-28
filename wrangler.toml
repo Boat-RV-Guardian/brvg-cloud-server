@@ -1,0 +1,15 @@
+# Cloudflare Worker adapter (src/worker.ts) — the hosted counterpart to the Node server, sharing the
+# same core. Deploy is OWNER-action (creates billable D1 + secrets); this file documents the bindings.
+#
+#   npx wrangler d1 create brvg               # once — copy the database_id below
+#   npx wrangler secret put FIREBASE_PROJECT_ID      # + CLIENT_EMAIL + PRIVATE_KEY (optional, for FCM push)
+#   npx wrangler deploy
+name = "brvg-cloud-worker"
+main = "src/worker.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "brvg"
+# database_id = "<fill in after `wrangler d1 create brvg`>"

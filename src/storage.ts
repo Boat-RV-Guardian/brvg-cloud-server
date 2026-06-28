@@ -7,7 +7,7 @@ import { downsampleHistory, RAW_HISTORY_WINDOW_DAYS } from './events.js';
 import type { Storage, VehicleConfig, SensorState, HistorySample } from './types.js';
 
 /** Hard cap on samples kept per device, regardless of retention window (memory/file-size guard). */
-const MAX_HISTORY_SAMPLES = 5000;
+export const MAX_HISTORY_SAMPLES = 5000;
 const RAW_WINDOW_MS = RAW_HISTORY_WINDOW_DAYS * 86_400_000;
 
 interface Db {

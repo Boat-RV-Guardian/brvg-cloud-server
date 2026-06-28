@@ -50,10 +50,33 @@ npm run build && npm start        # compiled
 - The app stores the URL + username + API key per vehicle (`sh_webhook_url` / `sh_webhook_user` /
   `sh_webhook_key`).
 
+## Storage backends
+
+The `Storage` seam (`src/types.ts`) has four interchangeable implementations:
+
+| backend | where | notes |
+| --- | --- | --- |
+| `MemoryStorage` | tests | in-process |
+| `FileStorage` | self-host default | a JSON file, zero dependencies |
+| `SqlStorage` + `NodeSqliteDriver` | self-host (durable) | `node:sqlite` (Node 22+, no native dep) — `createSqliteStorage('./data/brvg.db')` |
+| `SqlStorage` + `D1Driver` | **hosted Cloudflare** | the same SQL on Cloudflare D1, used by the Worker adapter |
+
+`SqlStorage` is one implementation over a tiny `SqlDriver` seam, so the schema + queries are written
+and unit-tested once (against in-memory SQLite) and run on both SQLite and D1.
+
+## Cloudflare Worker adapter (`src/worker.ts`)
+
+The hosted counterpart to the Node server, **reusing the same injected core** (`handleShellyWebhook`)
+and the LinkTap/FCM clients — only the transport (a `fetch` handler) and storage (D1) differ. Routes
+mirror the Node server: `GET|POST /api/shelly`, `GET /api/history`, `GET /api/health`. This is the
+path to **retiring the duplicated logic in the main repo's standalone `worker/`** (the cutover is an
+owner step). Bindings + deploy notes are in `wrangler.toml`.
+
 ## Status
 
-**v0.3.** Core + events + Node adapter + file storage + admin + Docker + tests; **tier-based history**
-(free 0 / basic 30d / premium ~3y, admin `retentionDays` cap) with `GET /api/history`; and **hourly
-downsampling** — raw samples for the last 7 days, then one-per-hour for older data so long-term
-history stays small (cost analysis §4). Roadmap: SQLite/D1 storage, a Cloudflare adapter sharing this
-core, and unifying with the hosted worker. See the main repo's `docs/SELF_HOST.md` + `open-tasks.md`.
+**v0.4.** Core + events + Node adapter + file storage + admin + Docker + tests; **tier-based history**
+(free 0 / basic 30d / premium ~3y, admin `retentionDays` cap) with `GET /api/history`; **hourly
+downsampling** (raw 7 days, then one-per-hour); and now **SQLite/D1 storage + a Cloudflare Worker
+adapter sharing the core**. Remaining roadmap: unify with / retire the main repo's hosted worker
+(owner-driven cutover), CI for the docker/worker builds. See the main repo's `docs/SELF_HOST.md` +
+`open-tasks.md`.
