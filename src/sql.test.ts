@@ -98,16 +98,26 @@ describe('SqlStorage — history', () => {
   });
 
   it('enforces the hard sample cap', async () => {
-    const s = await fresh();
-    // All within the raw window (no downsampling) so only the cap trims them.
+    // appendHistory is a read-modify-write, so driving the cap through 5000+ public appends would be
+    // O(n²) (and times out in CI). Seed the rows directly via the driver, then a SINGLE append must
+    // exercise the cap path and trim back to MAX. All timestamps are recent (within the raw window)
+    // so only the cap — not downsampling — does the trimming.
+    const driver = new NodeSqliteDriver(':memory:');
+    const s = new SqlStorage(driver);
+    await s.init();
     const base = 1_000_000_000_000;
-    for (let i = 0; i < MAX_HISTORY_SAMPLES + 50; i++) {
-      await s.appendHistory('v1', 'd', { at: base + i * 1000, extra: { i: String(i) } }, RETENTION);
+    for (let i = 0; i < MAX_HISTORY_SAMPLES; i++) {
+      await driver.run('INSERT INTO history (vid, device, at, extra) VALUES (?, ?, ?, ?)',
+        ['v1', 'd', base + i * 1000, JSON.stringify({ i: String(i) })]);
     }
+    expect((await s.getHistory('v1', 'd')).length).toBe(MAX_HISTORY_SAMPLES);
+    // One more append pushes to MAX+1, which the cap trims back to MAX (oldest dropped, newest kept).
+    await s.appendHistory('v1', 'd', { at: base + MAX_HISTORY_SAMPLES * 1000, extra: { i: 'newest' } }, RETENTION);
     const got = await s.getHistory('v1', 'd');
     expect(got.length).toBe(MAX_HISTORY_SAMPLES);
-    // newest are kept
-    expect(got[got.length - 1].extra.i).toBe(String(MAX_HISTORY_SAMPLES + 49));
+    expect(got[got.length - 1].extra.i).toBe('newest');
+    expect(got[0].extra.i).toBe('1'); // the original oldest (i=0) was dropped
+    driver.close();
   });
 });
 
