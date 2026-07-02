@@ -16,6 +16,10 @@ Point the app at it under **Settings → Vehicles → Advanced Vehicle Settings 
 - **`/admin`** (basic-auth) to set the instance API key, data-retention window, register vehicles
   (with LinkTap creds), and map users to FCM tokens.
 
+It relays sensor webhooks, alerts, valve shutoff, and history — it does **not** sync app
+configuration between devices (that's a hosted-cloud feature; with a self-hosted server each
+device keeps its own settings).
+
 The safety-critical decision logic lives in [`src/core.ts`](src/core.ts) + [`src/events.ts`](src/events.ts)
 and is fully unit-tested with injected deps ([`src/core.test.ts`](src/core.test.ts)) — no hardware needed.
 
@@ -32,7 +36,9 @@ SQLite/D1 storage can be added behind the same interface.
 ```bash
 cp .env.example .env   # set ADMIN_PASSWORD (and Firebase creds if you want push)
 docker compose up -d
-# admin: http://localhost:3030/admin   webhooks: http://localhost:3030/api/shelly
+# webhooks/API: http://localhost:3030/api/shelly   admin UI: http://localhost:3031/ (ADMIN_PORT)
+# NOTE: compose publishes only 3030 by default — reach the admin UI via an SSH tunnel or a
+# host-only port map (see docs/DEPLOYMENT.md). Keeps admin off the public internet.
 ```
 
 ### Local (Node 22+)
@@ -42,6 +48,18 @@ ADMIN_PASSWORD=dev npm run dev    # tsx, no build step
 npm test                          # vitest
 npm run build && npm start        # compiled
 ```
+
+## Documentation
+
+- [API reference](docs/API.md) — every endpoint, params, auth, response shapes, and error codes.
+- [Deployment guide](docs/DEPLOYMENT.md) — Docker Compose, bare Node, Raspberry Pi/VPS, reverse
+  proxy + HTTPS, storage backends, backups, upgrades.
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — symptom → cause → fix.
+- [Self-hosting guide](https://boatrvguardian.com/docs/self-hosting) on the website — the
+  end-to-end walkthrough including the app side.
+
+App-side setup lives at **Settings → Vehicles → Advanced → Custom Cloud Server URL** (enter the
+server URL + the username/API key you create here).
 
 ## Auth contract (matches the app)
 
