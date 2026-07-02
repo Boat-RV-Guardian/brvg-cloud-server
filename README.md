@@ -16,6 +16,10 @@ Point the app at it under **Settings → Vehicles → Advanced Vehicle Settings 
 - **`/admin`** (basic-auth) to set the instance API key, data-retention window, register vehicles
   (with LinkTap creds), and map users to FCM tokens.
 
+It relays sensor webhooks, alerts, valve shutoff, and history — it does **not** sync app
+configuration between devices (that's a hosted-cloud feature; with a self-hosted server each
+device keeps its own settings).
+
 The safety-critical decision logic lives in [`src/core.ts`](src/core.ts) + [`src/events.ts`](src/events.ts)
 and is fully unit-tested with injected deps ([`src/core.test.ts`](src/core.test.ts)) — no hardware needed.
 
@@ -42,6 +46,18 @@ ADMIN_PASSWORD=dev npm run dev    # tsx, no build step
 npm test                          # vitest
 npm run build && npm start        # compiled
 ```
+
+## Documentation
+
+- [API reference](docs/API.md) — every endpoint, params, auth, response shapes, and error codes.
+- [Deployment guide](docs/DEPLOYMENT.md) — Docker Compose, bare Node, Raspberry Pi/VPS, reverse
+  proxy + HTTPS, storage backends, backups, upgrades.
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — symptom → cause → fix.
+- [Self-hosting guide](https://boatrvguardian.com/docs/self-hosting) on the website — the
+  end-to-end walkthrough including the app side.
+
+App-side setup lives at **Settings → Vehicles → Advanced → Custom Cloud Server URL** (enter the
+server URL + the username/API key you create here).
 
 ## Auth contract (matches the app)
 
@@ -85,5 +101,6 @@ owner step). Bindings + deploy notes are in `wrangler.toml`.
 `GET /api/history`; **hourly downsampling** (raw 7 days, then one-per-hour); and **SQLite/D1 storage +
 a Cloudflare Worker adapter sharing the core**. CI runs typecheck + tests + a Docker image build.
 Remaining roadmap: unify with / retire the main repo's hosted worker (owner-driven cutover), and add a
-`wrangler` build/dry-run to CI (the worker bundle isn't exercised yet). See the main repo's
-`docs/SELF_HOST.md` + `open-tasks.md`.
+`wrangler` build/dry-run to CI (the worker bundle isn't exercised yet). See `docs/SELF_HOST.md` +
+`open-tasks.md` in the [main repo](https://github.com/Boat-RV-Guardian/Boat-RV-Guardian) (not this
+one).
