@@ -32,3 +32,33 @@ export function keyAuthorized(
   if (!requiredKey) return allowUnauthenticated;
   return safeEqual(presentedKey, requiredKey);
 }
+
+// — Per-vehicle webhook auth (SEC-4, phased — see the main repo's docs/SEC4_WEBHOOK_AUTH.md) ——————————
+//
+// Distinct from the instance `apiKey` above (which gates a whole self-host instance): in the HOSTED,
+// multi-tenant deployment, different owners' devices hit ONE worker, so each vehicle carries its own
+// `webhookSecret`, sent by the device as `&k=<secret>`. Shelly fires a static URL and can't sign
+// requests, so a URL bearer secret is the strongest thing it can carry. Rollout is phased so a
+// provisioned device never breaks:
+//   'legacy'          — the vehicle has no webhookSecret (not migrated). Always accepted.
+//   'ok'              — a webhookSecret is set and the request's `k` matches.
+//   'unauthenticated' — a webhookSecret is set but `k` is missing/wrong. Phase 1 ACCEPTS (records the
+//                       state so migration is observable); flipping WEBHOOK_AUTH_REQUIRED rejects them.
+
+export type VehicleWebhookAuthState = 'legacy' | 'ok' | 'unauthenticated';
+
+/** Classify a webhook request's per-vehicle auth given the vehicle's secret and the presented `k`. */
+export function classifyVehicleWebhookAuth(
+  webhookSecret: string | null | undefined,
+  providedK: string | null | undefined,
+): VehicleWebhookAuthState {
+  if (!webhookSecret) return 'legacy';
+  return safeEqual(providedK, webhookSecret) ? 'ok' : 'unauthenticated';
+}
+
+/**
+ * Phase toggle for SEC-4. While false (Phase 1), an 'unauthenticated' request is accepted (the state is
+ * still reported) so provisioned devices keep working until they re-register with `&k=`. Flip to true
+ * (Phase 2) ONLY once every active vehicle's devices have re-registered.
+ */
+export const WEBHOOK_AUTH_REQUIRED = false;

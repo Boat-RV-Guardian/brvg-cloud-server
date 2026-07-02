@@ -16,7 +16,7 @@ function deps(): Deps { return { storage, notify, linktap, now: () => nowMs }; }
 
 function input(over: Partial<ShellyWebhookInput> & { event: string }): ShellyWebhookInput {
   const sp = new URLSearchParams({ vid: 'v1', event: over.event, device: over.device || 'dev1', ...(over as any).extra });
-  return { vid: over.vid ?? 'v1', event: over.event, device: over.device ?? 'dev1', params: sp, key: over.key ?? null };
+  return { vid: over.vid ?? 'v1', event: over.event, device: over.device ?? 'dev1', params: sp, key: over.key ?? null, k: over.k ?? null };
 }
 
 beforeEach(() => {
@@ -164,5 +164,43 @@ describe('device limits', () => {
     // Existing device should be accepted
     const res2 = await handleShellyWebhook(input({ vid: 'v2', device: 'dev1', event: 'online' }), deps());
     expect(res2.status).toBe('ok');
+  });
+});
+
+describe('per-vehicle webhook auth (SEC-4, Phase 1)', () => {
+  it('reports legacy for a vehicle with no webhookSecret (accepted, unchanged behavior)', async () => {
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm' }), deps());
+    expect(r.status).toBe('ok');
+    expect(r.vehicleAuth).toBe('legacy');
+    expect(shutoffCalls).toHaveLength(2);
+  });
+
+  it('reports ok when the request carries the matching secret', async () => {
+    storage.putVehicle({
+      vid: 'v1', name: 'Boaty', tier: 'premium', allowedUsers: ['u1'], webhookSecret: 'sekret',
+      linktap: { username: 'u', apiKey: 'k', gatewayId: 'gw', taplinkerIds: ['t1', 't2'] },
+    });
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm', k: 'sekret' }), deps());
+    expect(r.status).toBe('ok');
+    expect(r.vehicleAuth).toBe('ok');
+  });
+
+  it('Phase 1: still processes an unauthenticated request but reports the state', async () => {
+    storage.putVehicle({
+      vid: 'v1', name: 'Boaty', tier: 'premium', allowedUsers: ['u1'], webhookSecret: 'sekret',
+      linktap: { username: 'u', apiKey: 'k', gatewayId: 'gw', taplinkerIds: ['t1', 't2'] },
+    });
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm', k: 'wrong' }), deps());
+    expect(r.status).toBe('ok');               // Phase 1 accepts
+    expect(r.vehicleAuth).toBe('unauthenticated');
+    expect(shutoffCalls).toHaveLength(2);       // safety path still runs
+  });
+
+  it('never stores the secret `k` into sensorState', async () => {
+    storage.putVehicle({ vid: 'v1', allowedUsers: ['u1'], webhookSecret: 'sekret' });
+    await handleShellyWebhook(input({ event: 'voltmeter.measurement', k: 'sekret', extra: { v: '12.6' } } as any), deps());
+    const st = await storage.getSensorState('v1', 'dev1');
+    expect(st?.extra.k).toBeUndefined();
+    expect(st?.extra.v).toBe('12.6');
   });
 });

@@ -7,7 +7,7 @@ import {
   telemetryResolutionSecForTier, shouldPersistTelemetry, TELEMETRY_RESOLUTION_SEC,
   historyRetentionDaysForTier,
 } from './events.js';
-import { keyAuthorized } from './auth.js';
+import { keyAuthorized, classifyVehicleWebhookAuth, WEBHOOK_AUTH_REQUIRED } from './auth.js';
 import { parseMessagingPrefs, recipientsForEvent } from './messaging.js';
 import type { Deps, WebhookResult, ShutoffResult, Tier } from './types.js';
 
@@ -17,8 +17,10 @@ export interface ShellyWebhookInput {
   device: string | null;
   /** Telemetry params the device embedded (everything except vid/event/device/key). */
   params: Iterable<[string, string]>;
-  /** Auth key from the request (?key= or header), or null. */
+  /** Instance auth key from the request (?key= or header), or null — gates a whole self-host instance. */
   key?: string | null;
+  /** Per-vehicle webhook secret from the request (?k=), or null (SEC-4). */
+  k?: string | null;
 }
 
 /**
@@ -40,6 +42,17 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
   if (!input.vid) return { status: 'missing_vid' };
   const vehicle = await storage.getVehicle(input.vid);
   if (!vehicle) return { status: 'vehicle_not_found' };
+
+  // Per-vehicle webhook auth (SEC-4). Phase 1: a vehicle with a webhookSecret whose request omits/mismatches
+  // `k` is still processed, but the state is reported so migration is observable. Once every device has
+  // re-registered with `&k=`, flip WEBHOOK_AUTH_REQUIRED to reject 'unauthenticated'.
+  const vehicleAuth = classifyVehicleWebhookAuth(vehicle.webhookSecret, input.k);
+  if (WEBHOOK_AUTH_REQUIRED && vehicleAuth === 'unauthenticated') {
+    return { status: 'unauthorized', vehicleAuth };
+  }
+  if (vehicleAuth === 'unauthenticated') {
+    log?.(`vehicle ${input.vid}: webhook missing/invalid per-vehicle secret (accepted — Phase 1)`);
+  }
 
   const event = input.event || 'sensor alert';
   const device = sanitizeDevice(input.device);
@@ -143,5 +156,5 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
     }
   }
 
-  return { status: 'ok', event, telemetry, persisted, notified, pushFailed, messagesSent, messagesAttempted, shutoff };
+  return { status: 'ok', vehicleAuth, event, telemetry, persisted, notified, pushFailed, messagesSent, messagesAttempted, shutoff };
 }

@@ -55,6 +55,13 @@ npm run build && npm start        # compiled
   spam, or read history.
 - The app stores the URL + username + API key per vehicle (`sh_webhook_url` / `sh_webhook_user` /
   `sh_webhook_key`).
+- **Per-vehicle secret (SEC-4, for the hosted multi-tenant worker):** in addition to the instance
+  `apiKey`, a vehicle may carry a `webhookSecret`; devices then send it as `&k=<secret>` and the worker
+  verifies it per request (constant-time). This is **phased** — a vehicle with no secret is accepted as
+  before, and while `WEBHOOK_AUTH_REQUIRED` is `false` (Phase 1) a set-but-unmatched secret is still
+  processed and reported (`vehicleAuth: 'unauthenticated'`) so provisioned devices migrate without
+  breaking; flip the flag to reject once they've all re-registered. See the main repo's
+  `docs/SEC4_WEBHOOK_AUTH.md`.
 
 ## Storage backends
 

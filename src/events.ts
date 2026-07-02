@@ -20,7 +20,9 @@ export function isFloodShutoff(event: string): boolean {
   return FLOOD_EVENT_RE.test(event) && !isAlarmCleared(event) && !isTelemetry(event);
 }
 
-export const RESERVED_PARAMS: ReadonlySet<string> = new Set(['vid', 'event', 'device', 'key']);
+// Routing/auth params — never stored as telemetry. `k` is the per-vehicle webhook secret (SEC-4);
+// keeping it reserved ensures the secret never leaks into a sensorState doc.
+export const RESERVED_PARAMS: ReadonlySet<string> = new Set(['vid', 'event', 'device', 'key', 'k']);
 
 /** Extract device-embedded telemetry params (skip routing/auth params + unset placeholders). */
 export function extractSensorStateExtras(searchParams: Iterable<[string, string]>): Record<string, string> {
