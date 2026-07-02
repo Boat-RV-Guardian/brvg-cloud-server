@@ -16,6 +16,8 @@ export interface VehicleConfig {
     gatewayId?: string;
     taplinkerIds?: string[];
   };
+  /** Per-vehicle webhook bearer secret (SEC-4). Devices send it as `&k=`; verified per request. */
+  webhookSecret?: string;
   /** JSON string representing SmsPrefs */
   sh_sms_prefs?: string;
   /** JSON string representing WhatsappPrefs */
@@ -97,6 +99,8 @@ export interface Deps {
 
 export interface WebhookResult {
   status: 'ok' | 'unauthorized' | 'missing_vid' | 'vehicle_not_found';
+  /** Per-vehicle webhook auth state (SEC-4): 'legacy' (no secret), 'ok', or 'unauthenticated'. */
+  vehicleAuth?: 'legacy' | 'ok' | 'unauthenticated';
   event?: string;
   telemetry?: boolean;
   persisted?: boolean;

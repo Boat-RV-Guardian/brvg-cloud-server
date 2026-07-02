@@ -42,12 +42,16 @@ export async function handleAdminApi(path: string, method: string, body: string,
 
   if (path === '/admin/api/vehicle' && method === 'POST') {
     const b = parse(); if (!b?.vid) return send(400, { error: 'vid required' });
+    // Preserve an existing webhookSecret unless one is explicitly provided (so re-saving a vehicle from
+    // the admin form doesn't wipe its per-vehicle secret).
+    const existing = await storage.getVehicle(String(b.vid));
     const v: VehicleConfig = {
       vid: String(b.vid),
       name: b.name ? String(b.name) : undefined,
       tier: ['free', 'basic', 'premium'].includes(b.tier) ? b.tier : undefined,
       allowedUsers: Array.isArray(b.allowedUsers) ? b.allowedUsers.map(String) : [],
       linktap: b.linktap || undefined,
+      webhookSecret: typeof b.webhookSecret === 'string' && b.webhookSecret ? b.webhookSecret : existing?.webhookSecret,
     };
     await storage.putVehicle(v);
     return send(200, { ok: true, vid: v.vid });

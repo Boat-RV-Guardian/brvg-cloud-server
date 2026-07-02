@@ -69,6 +69,7 @@ const server = createServer(async (req, res) => {
         device: url.searchParams.get('device'),
         params: url.searchParams,
         key: url.searchParams.get('key'),
+        k: url.searchParams.get('k'),
       }, deps);
       const code = result.status === 'ok' ? 200
         : result.status === 'unauthorized' ? 401
