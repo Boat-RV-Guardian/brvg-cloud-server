@@ -12,6 +12,7 @@ import { SqlStorage } from './sql.js';
 import { D1Driver, type D1Database } from './d1.js';
 import { LinkTapCloud } from './linktap.js';
 import { createFcmNotifier, NullNotifier } from './notify.js';
+import { keyAuthorized } from './auth.js';
 import type { Deps, Storage } from './types.js';
 
 export interface Env {
@@ -70,7 +71,8 @@ export default {
       // History read (charts/trends). Same API-key auth as webhooks.
       if (url.pathname === '/api/history') {
         const requiredKey = await storage.getSetting('apiKey');
-        if (requiredKey && url.searchParams.get('key') !== requiredKey) return json({ status: 'unauthorized' }, 401);
+        const allowUnauth = (await storage.getSetting('allowUnauthenticated')) === 'true';
+        if (!keyAuthorized(requiredKey, allowUnauth, url.searchParams.get('key'))) return json({ status: 'unauthorized' }, 401);
         const vid = url.searchParams.get('vid');
         const device = url.searchParams.get('device');
         if (!vid || !device) return json({ error: 'vid + device required' }, 400);

@@ -45,8 +45,14 @@ npm run build && npm start        # compiled
 
 ## Auth contract (matches the app)
 
-- **Device webhooks**: if an instance API key is set, requests must include `?key=<API key>` (Shelly
-  can't send headers). Unknown keys are rejected.
+- **Device webhooks**: requests must include `?key=<API key>` (Shelly can't send headers). Unknown
+  keys are rejected, and the comparison is constant-time.
+- **Fails closed:** a fresh instance with **no** API key set **rejects all webhooks** (and
+  `/api/history`) until you set one under `/admin`. `/admin` itself stays reachable via
+  `ADMIN_PASSWORD`, so you can boot, open `/admin`, and set the key. To intentionally run an open,
+  unauthenticated instance, tick **"Disable auth"** in `/admin` (sets `allowUnauthenticated=true`) —
+  not recommended, since anyone who knows a registered `vid` could then trigger a valve close, push
+  spam, or read history.
 - The app stores the URL + username + API key per vehicle (`sh_webhook_url` / `sh_webhook_user` /
   `sh_webhook_key`).
 
