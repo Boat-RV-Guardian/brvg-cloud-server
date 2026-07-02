@@ -83,7 +83,7 @@ owner step). Bindings + deploy notes are in `wrangler.toml`.
 **Pre-1.0 (package `0.1.0`).** Core + events + Node adapter + file storage + admin + Docker + tests;
 **tier-based history** (free 0 / basic 30d / premium ~3y, admin `retentionDays` cap) with
 `GET /api/history`; **hourly downsampling** (raw 7 days, then one-per-hour); and **SQLite/D1 storage +
-a Cloudflare Worker adapter sharing the core**. CI runs typecheck + tests + a Docker image build.
-Remaining roadmap: unify with / retire the main repo's hosted worker (owner-driven cutover), and add a
-`wrangler` build/dry-run to CI (the worker bundle isn't exercised yet). See the main repo's
-`docs/SELF_HOST.md` + `open-tasks.md`.
+a Cloudflare Worker adapter sharing the core**. CI runs typecheck + tests + a Docker image build + a
+`wrangler` dry-run that bundle-checks the Worker adapter. Remaining roadmap: unify with / retire the
+main repo's hosted worker (owner-driven cutover). See the main repo's `docs/SELF_HOST.md` +
+`open-tasks.md`.
