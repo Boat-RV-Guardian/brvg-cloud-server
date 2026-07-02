@@ -17,6 +17,40 @@ const mapField = (fields: any, key: string): Record<string, string> => {
   return out;
 };
 
+/**
+ * Build a VehicleConfig from a Firestore vehicle-doc `fields` object. Shared by getVehicle +
+ * listVehicles so both pick up the same fields — crucially `webhookSecret` (SEC-4) and the messaging
+ * prefs, which the app writes to the doc as `sh_webhook_secret` / `sh_sms_prefs` / `sh_whatsapp_prefs`
+ * / `sh_telegram_prefs`. Without these the hosted worker can't verify per-vehicle webhook auth and
+ * never resolves any SMS/WhatsApp/Telegram recipients.
+ */
+export function vehicleFromFields(vid: string, fields: any): VehicleConfig {
+  const v: VehicleConfig = {
+    vid,
+    name: strField(fields, 'lt_vessel_name') || strField(fields, 'name'),
+    tier: (strField(fields, 'tier') as Tier) || 'premium', // Legacy behavior: unset is grandfathered Premium
+    allowedUsers: arrField(fields, 'allowedUsers'),
+  };
+  const ltUser = strField(fields, 'lt_cloud_user');
+  if (ltUser) {
+    v.linktap = {
+      username: ltUser,
+      apiKey: strField(fields, 'lt_cloud_key'),
+      gatewayId: strField(fields, 'lt_gateway_id'),
+      taplinkerIds: [strField(fields, 'lt_device_id'), strField(fields, 'lt_device_id_2')].filter(Boolean),
+    };
+  }
+  const secret = strField(fields, 'sh_webhook_secret');
+  if (secret) v.webhookSecret = secret;
+  const sms = strField(fields, 'sh_sms_prefs');
+  if (sms) v.sh_sms_prefs = sms;
+  const whatsapp = strField(fields, 'sh_whatsapp_prefs');
+  if (whatsapp) v.sh_whatsapp_prefs = whatsapp;
+  const telegram = strField(fields, 'sh_telegram_prefs');
+  if (telegram) v.sh_telegram_prefs = telegram;
+  return v;
+}
+
 export interface FirestoreConfig {
   projectId: string;
   clientEmail: string;
@@ -145,22 +179,7 @@ export class FirestoreStorage implements Storage {
   async getVehicle(vid: string): Promise<VehicleConfig | null> {
     const fields = await this.getDoc(`vehicles/${vid}`);
     if (!fields) return null;
-    const v: VehicleConfig = {
-      vid,
-      name: strField(fields, 'lt_vessel_name') || strField(fields, 'name'),
-      tier: (strField(fields, 'tier') as Tier) || 'premium', // Legacy behavior: unset is grandfathered Premium
-      allowedUsers: arrField(fields, 'allowedUsers'),
-    };
-    const ltUser = strField(fields, 'lt_cloud_user');
-    if (ltUser) {
-      v.linktap = {
-        username: ltUser,
-        apiKey: strField(fields, 'lt_cloud_key'),
-        gatewayId: strField(fields, 'lt_gateway_id'),
-        taplinkerIds: [strField(fields, 'lt_device_id'), strField(fields, 'lt_device_id_2')].filter(Boolean),
-      };
-    }
-    return v;
+    return vehicleFromFields(vid, fields);
   }
 
   async getSensorState(vid: string, device: string): Promise<SensorState | null> {
@@ -273,24 +292,7 @@ export class FirestoreStorage implements Storage {
 
   async listVehicles(): Promise<VehicleConfig[]> {
     const docs = await this.listCollection('vehicles');
-    return docs.map(d => {
-      const v: VehicleConfig = {
-        vid: d.id,
-        name: strField(d.fields, 'lt_vessel_name') || strField(d.fields, 'name'),
-        tier: (strField(d.fields, 'tier') as Tier) || 'premium',
-        allowedUsers: arrField(d.fields, 'allowedUsers'),
-      };
-      const ltUser = strField(d.fields, 'lt_cloud_user');
-      if (ltUser) {
-        v.linktap = {
-          username: ltUser,
-          apiKey: strField(d.fields, 'lt_cloud_key'),
-          gatewayId: strField(d.fields, 'lt_gateway_id'),
-          taplinkerIds: [strField(d.fields, 'lt_device_id'), strField(d.fields, 'lt_device_id_2')].filter(Boolean),
-        };
-      }
-      return v;
-    });
+    return docs.map(d => vehicleFromFields(d.id, d.fields));
   }
 
   async putVehicle(v: VehicleConfig): Promise<void> {
@@ -310,6 +312,12 @@ export class FirestoreStorage implements Storage {
         }
       }
     }
+    // Round-trip the webhook secret + messaging prefs when present (masked write, so absent fields are
+    // left untouched rather than cleared).
+    if (v.webhookSecret) fields.sh_webhook_secret = { stringValue: v.webhookSecret };
+    if (v.sh_sms_prefs) fields.sh_sms_prefs = { stringValue: v.sh_sms_prefs };
+    if (v.sh_whatsapp_prefs) fields.sh_whatsapp_prefs = { stringValue: v.sh_whatsapp_prefs };
+    if (v.sh_telegram_prefs) fields.sh_telegram_prefs = { stringValue: v.sh_telegram_prefs };
     await this.patchDoc(`vehicles/${v.vid}`, fields, Object.keys(fields));
   }
 
