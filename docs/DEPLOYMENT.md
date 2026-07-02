@@ -24,10 +24,20 @@ docker compose up -d
 
 | Variable | Required | Meaning |
 | --- | --- | --- |
-| `ADMIN_PASSWORD` | **yes** | Basic-auth password for `/admin` (username is ignored). Compose refuses to start without it |
+| `ADMIN_PASSWORD` | **yes** | Basic-auth password for the admin console (username is ignored). Compose refuses to start without it |
 | `FIREBASE_PROJECT_ID` `FIREBASE_CLIENT_EMAIL` `FIREBASE_PRIVATE_KEY` | no | Firebase service-account creds for FCM push. Omit all three to run without push — flood shutoff and state caching still work |
 | `DB_PATH` | no | JSON database path. The compose file pins it to `/app/data/brvg.json` (on the volume) — leave it alone under Docker |
-| `PORT` | no | Listen port, default `3030` |
+| `PORT` | no | Public API / webhook port, default `3030` |
+| `ADMIN_PORT` | no | Admin-console port, default `3031` (a **separate** listener from `PORT`) |
+
+> **Two ports.** The server runs the public API (`/healthz`, `/api/shelly`, `/api/history`) on
+> `PORT` and the admin console (UI + `/admin/api/*`) on `ADMIN_PORT`. The shipped `docker-compose.yml`
+> and `Dockerfile` publish **only `3030`**, so the admin UI (`3031`) is reachable on the container/host
+> network but not from the internet by default — this is deliberate, so you can expose the webhook
+> endpoint publicly while keeping admin private. To reach the admin UI, add `- "127.0.0.1:3031:3031"`
+> to the compose `ports:` (host-only), tunnel it over SSH (`ssh -L 3031:localhost:3031 <host>`), or
+> put it behind an authenticated reverse proxy. Prefer host-only / tunnel over publishing `3031` to
+> the internet.
 
 ### Persistence
 
@@ -50,7 +60,9 @@ docker compose ps                           # STATUS should say "healthy"
 
 A fresh instance **rejects all webhooks** until it has an API key (fails closed):
 
-1. Open `http://<server>:3030/admin` (any username, password = `ADMIN_PASSWORD`).
+1. Open the admin UI at `http://<server>:3031/` (any username, password = `ADMIN_PASSWORD`). Port
+   `3031` isn't published by default — reach it over an SSH tunnel or a host-only port map (see the
+   two-ports note above).
 2. Set the instance **API key** — a long random string, e.g. `openssl rand -hex 24`.
 3. Register your vehicle: `vid`, name, tier (`premium` or unset is sensible on a self-host —
    tier only throttles telemetry and caps history), allowed user IDs, and your **LinkTap cloud

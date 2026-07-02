@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BRVG Self-Hosted Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  
+  <div id="login-container" class="glass-panel centered-panel">
+    <h2>Admin Login</h2>
+    <p class="subtitle">Enter your ADMIN_PASSWORD</p>
+    <form id="login-form">
+      <input type="password" id="login-password" placeholder="Password" required>
+      <button type="submit" class="btn primary">Login</button>
+      <div id="login-error" class="error-msg"></div>
+    </form>
+  </div>
+
+  <div id="dashboard-container" class="hidden">
+    <header class="glass-panel header-panel">
+      <div class="header-content">
+        <h1>🚤 BRVG Server Admin</h1>
+        <div id="status-badge" class="badge">Checking Status...</div>
+      </div>
+      <button id="logout-btn" class="btn text-btn">Logout</button>
+    </header>
+
+    <main class="dashboard-grid">
+      <section class="glass-panel">
+        <h3>Instance Settings</h3>
+        <form id="settings-form">
+          <div class="form-group">
+            <label for="apiKey">API Key <span class="help-text">(devices must send ?key=…)</span></label>
+            <input type="text" id="apiKey" placeholder="Required unless auth disabled">
+          </div>
+          <div class="form-group checkbox">
+            <input type="checkbox" id="allowUnauth">
+            <label for="allowUnauth">Disable API Auth <span class="warn-text">(Not Recommended)</span></label>
+          </div>
+          <div class="form-group">
+            <label for="retentionDays">Data Retention <span class="help-text">(days, 0 = forever)</span></label>
+            <input type="number" id="retentionDays" min="0">
+          </div>
+          <button type="submit" class="btn primary">Save Settings</button>
+        </form>
+      </section>
+
+      <section class="glass-panel">
+        <h3>Vehicles</h3>
+        <div class="table-container">
+          <table id="vehicles-table">
+            <thead>
+              <tr>
+                <th>Vehicle ID</th>
+                <th>Name</th>
+                <th>Tier</th>
+                <th>Users</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="glass-panel">
+        <h3>Add / Update Vehicle</h3>
+        <form id="vehicle-form">
+          <div class="form-group">
+            <label for="v-id">Vehicle ID</label>
+            <input type="text" id="v-id" required>
+          </div>
+          <div class="form-group">
+            <label for="v-name">Name</label>
+            <input type="text" id="v-name">
+          </div>
+          <div class="form-group">
+            <label for="v-tier">Tier</label>
+            <select id="v-tier">
+              <option value="">(unset)</option>
+              <option value="free">Free</option>
+              <option value="basic">Basic</option>
+              <option value="premium">Premium</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="v-users">Allowed User IDs <span class="help-text">(comma-separated)</span></label>
+            <input type="text" id="v-users">
+          </div>
+          <button type="submit" class="btn primary">Save Vehicle</button>
+        </form>
+      </section>
+
+      <section class="glass-panel">
+        <h3>Map User FCM Token</h3>
+        <form id="token-form">
+          <div class="form-group">
+            <label for="u-id">User ID</label>
+            <input type="text" id="u-id" required>
+          </div>
+          <div class="form-group">
+            <label for="u-token">FCM Token</label>
+            <input type="text" id="u-token" required>
+          </div>
+          <button type="submit" class="btn primary">Save Token</button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

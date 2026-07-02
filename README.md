@@ -36,7 +36,9 @@ SQLite/D1 storage can be added behind the same interface.
 ```bash
 cp .env.example .env   # set ADMIN_PASSWORD (and Firebase creds if you want push)
 docker compose up -d
-# admin: http://localhost:3030/admin   webhooks: http://localhost:3030/api/shelly
+# webhooks/API: http://localhost:3030/api/shelly   admin UI: http://localhost:3031/ (ADMIN_PORT)
+# NOTE: compose publishes only 3030 by default — reach the admin UI via an SSH tunnel or a
+# host-only port map (see docs/DEPLOYMENT.md). Keeps admin off the public internet.
 ```
 
 ### Local (Node 22+)
@@ -71,6 +73,13 @@ server URL + the username/API key you create here).
   spam, or read history.
 - The app stores the URL + username + API key per vehicle (`sh_webhook_url` / `sh_webhook_user` /
   `sh_webhook_key`).
+- **Per-vehicle secret (SEC-4, for the hosted multi-tenant worker):** in addition to the instance
+  `apiKey`, a vehicle may carry a `webhookSecret`; devices then send it as `&k=<secret>` and the worker
+  verifies it per request (constant-time). This is **phased** — a vehicle with no secret is accepted as
+  before, and while `WEBHOOK_AUTH_REQUIRED` is `false` (Phase 1) a set-but-unmatched secret is still
+  processed and reported (`vehicleAuth: 'unauthenticated'`) so provisioned devices migrate without
+  breaking; flip the flag to reject once they've all re-registered. See the main repo's
+  `docs/SEC4_WEBHOOK_AUTH.md`.
 
 ## Storage backends
 
@@ -99,8 +108,7 @@ owner step). Bindings + deploy notes are in `wrangler.toml`.
 **Pre-1.0 (package `0.1.0`).** Core + events + Node adapter + file storage + admin + Docker + tests;
 **tier-based history** (free 0 / basic 30d / premium ~3y, admin `retentionDays` cap) with
 `GET /api/history`; **hourly downsampling** (raw 7 days, then one-per-hour); and **SQLite/D1 storage +
-a Cloudflare Worker adapter sharing the core**. CI runs typecheck + tests + a Docker image build.
-Remaining roadmap: unify with / retire the main repo's hosted worker (owner-driven cutover), and add a
-`wrangler` build/dry-run to CI (the worker bundle isn't exercised yet). See `docs/SELF_HOST.md` +
-`open-tasks.md` in the [main repo](https://github.com/Boat-RV-Guardian/Boat-RV-Guardian) (not this
-one).
+a Cloudflare Worker adapter sharing the core**. CI runs typecheck + tests + a Docker image build + a
+`wrangler` dry-run that bundle-checks the Worker adapter. Remaining roadmap: unify with / retire the
+main repo's hosted worker (owner-driven cutover). See the main repo's `docs/SELF_HOST.md` +
+`open-tasks.md`.

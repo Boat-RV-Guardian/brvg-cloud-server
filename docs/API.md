@@ -1,11 +1,24 @@
 # HTTP API reference
 
 Every endpoint of the Node server (`src/server.ts`), verified against the source. The Cloudflare
-Worker adapter (`src/worker.ts`) exposes the same public API minus `/admin` — differences are noted
-at the end.
+Worker adapter (`src/worker.ts`) exposes the same public API minus the admin surface — differences
+are noted at the end.
 
-All responses are JSON except the `/admin` HTML page. Unknown paths return `404 {"error":"not found"}`;
-unexpected failures return `500 {"error":"<message>"}`.
+### Two servers, two ports
+
+`src/server.ts` starts **two** HTTP listeners:
+
+| Server | Default port (env) | Serves |
+| --- | --- | --- |
+| **Public API** | `3030` (`PORT`) | `/healthz`, `/api/shelly`, `/api/history` — the surface Shelly devices and the app hit |
+| **Admin UI** | `3031` (`ADMIN_PORT`) | the admin console (static UI at `/`) and `/admin/api/*` |
+
+Keeping admin on its own port means you can publish only the public API port to the internet and
+keep the admin console on your host / private network. The default Docker setup publishes **only
+`3030`** — see [DEPLOYMENT.md](DEPLOYMENT.md) for reaching the admin UI.
+
+All responses are JSON except the admin UI's static HTML. Unknown paths on the public server return
+`404 {"error":"not found"}`; unexpected failures return `500 {"error":"<message>"}`.
 
 ## Auth model
 
@@ -14,12 +27,16 @@ Two independent schemes:
 | Surface | Scheme | Where |
 | --- | --- | --- |
 | `/api/shelly`, `/api/history` | Instance **API key** as `?key=` query param | Shelly devices can't send headers, so the key rides in the URL |
-| `/admin`, `/admin/api/*` | **HTTP Basic auth** against `ADMIN_PASSWORD` | Username is ignored; only the password is checked |
+| Admin UI + `/admin/api/*` (admin port) | **HTTP Basic auth** against `ADMIN_PASSWORD` | Username is ignored; only the password is checked |
 
-The API key is set on the `/admin` page (or `POST /admin/api/settings`). **Fails closed**: with no
-key configured, `/api/shelly` and `/api/history` reject everything (401) until you set one — unless
-you explicitly tick "Disable auth" (`allowUnauthenticated=true`), which is not recommended. Both
-key and password comparisons are constant-time.
+`/api/shelly` also accepts a per-vehicle secret `?k=` in addition to the instance `key`. On a
+self-hosted instance the instance `key` is the one you configure; `k` is used by the hosted service's
+per-vehicle auth and is optional here.
+
+The API key is set in the admin UI (or `POST /admin/api/settings`). **Fails closed**: with no key
+configured, `/api/shelly` and `/api/history` reject everything (401) until you set one — unless you
+explicitly tick "Disable auth" (`allowUnauthenticated=true`), which is not recommended. Both key and
+password comparisons are constant-time.
 
 Because the key is in the query string, serve the API over HTTPS in production (see
 [DEPLOYMENT.md](DEPLOYMENT.md)) and treat webhook URLs as secrets.
@@ -37,8 +54,9 @@ flood/leak alarm — closes the vehicle's LinkTap valves and pushes alerts.
 
 | Param | Required | Meaning |
 | --- | --- | --- |
-| `vid` | yes | Vehicle ID — must match a vehicle registered under `/admin` |
+| `vid` | yes | Vehicle ID — must match a vehicle registered in the admin console |
 | `key` | yes* | Instance API key (*unless auth is disabled) |
+| `k` | no | Per-vehicle secret (hosted-service auth); optional on a self-hosted instance |
 | `device` | no | Device ID; defaults to `unknown`. `/`, `#`, `?` are replaced with `_` |
 | `event` | no | Event name; defaults to `sensor alert` (treated as a pushable alert) |
 | anything else | no | Passthrough telemetry (e.g. `v`, `vraw`, `tC`) stored as the state's `extra` map; empty or literal `null` values are dropped |
@@ -186,20 +204,23 @@ curl http://localhost:3030/healthz
 
 ---
 
-## `/admin` — instance admin (HTTP Basic auth)
+## Admin console (separate port, HTTP Basic auth)
 
-Everything under `/admin` requires Basic auth: any username, password = `ADMIN_PASSWORD`. If
-`ADMIN_PASSWORD` is not set in the environment, all `/admin` requests are denied (401) — the server
-never exposes an unprotected admin.
+The admin console runs on its **own listener** at `ADMIN_PORT` (default `3031`), not on the public
+API port. The static UI is served at the root of that port (`http://<host>:3031/`), and the JSON
+endpoints live under `/admin/api/*` on the same port. Everything under `/admin/api/*` requires Basic
+auth: any username, password = `ADMIN_PASSWORD`. If `ADMIN_PASSWORD` is not set, those requests are
+denied (401) — the server never exposes an unprotected admin API.
 
-`GET /admin` serves a small server-rendered HTML console that drives the JSON endpoints below: set
-the API key, toggle unauthenticated mode, set the retention cap, register vehicles (with LinkTap
-credentials), and map users to FCM tokens.
+The UI drives the JSON endpoints below: set the API key, toggle unauthenticated mode, set the
+retention cap, register vehicles (with LinkTap credentials), and map users to FCM tokens. Examples
+below use `localhost:3031` since admin is typically reached on the host / private network rather than
+published to the internet.
 
 ### `GET /admin/api/status`
 
 ```bash
-curl -u admin:$ADMIN_PASSWORD https://guardian.example.com/admin/api/status
+curl -u admin:$ADMIN_PASSWORD http://localhost:3031/admin/api/status
 ```
 
 ```json
@@ -220,7 +241,7 @@ All fields optional; only supplied fields are changed.
 ```bash
 curl -u admin:$ADMIN_PASSWORD -H 'Content-Type: application/json' \
   -d '{"apiKey":"a-long-random-string","allowUnauthenticated":false,"retentionDays":365}' \
-  https://guardian.example.com/admin/api/settings
+  http://localhost:3031/admin/api/settings
 ```
 
 Returns `{"ok":true}`, or `400 {"error":"bad json"}`.
@@ -243,7 +264,7 @@ curl -u admin:$ADMIN_PASSWORD -H 'Content-Type: application/json' -d '{
     "gatewayId": "GATEWAY_ID",
     "taplinkerIds": ["TAPLINKER_ID"]
   }
-}' https://guardian.example.com/admin/api/vehicle
+}' http://localhost:3031/admin/api/vehicle
 ```
 
 Returns `{"ok":true,"vid":"boat1"}`, or `400 {"error":"vid required"}`.
@@ -256,7 +277,7 @@ vehicle go to every `allowedUsers` entry that has a token mapped here.
 ```bash
 curl -u admin:$ADMIN_PASSWORD -H 'Content-Type: application/json' \
   -d '{"uid":"uid-1","token":"FCM_REGISTRATION_TOKEN"}' \
-  https://guardian.example.com/admin/api/user-token
+  http://localhost:3031/admin/api/user-token
 ```
 
 Returns `{"ok":true}`, or `400 {"error":"uid + token required"}`.

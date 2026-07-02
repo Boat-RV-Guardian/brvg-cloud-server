@@ -7,8 +7,9 @@ import {
   telemetryResolutionSecForTier, shouldPersistTelemetry, TELEMETRY_RESOLUTION_SEC,
   historyRetentionDaysForTier,
 } from './events.js';
-import { keyAuthorized } from './auth.js';
-import type { Deps, WebhookResult, ShutoffResult } from './types.js';
+import { keyAuthorized, classifyVehicleWebhookAuth, WEBHOOK_AUTH_REQUIRED } from './auth.js';
+import { parseMessagingPrefs, recipientsForEvent } from './messaging.js';
+import type { Deps, WebhookResult, ShutoffResult, Tier } from './types.js';
 
 export interface ShellyWebhookInput {
   vid: string | null;
@@ -16,8 +17,10 @@ export interface ShellyWebhookInput {
   device: string | null;
   /** Telemetry params the device embedded (everything except vid/event/device/key). */
   params: Iterable<[string, string]>;
-  /** Auth key from the request (?key= or header), or null. */
+  /** Instance auth key from the request (?key= or header), or null — gates a whole self-host instance. */
   key?: string | null;
+  /** Per-vehicle webhook secret from the request (?k=), or null (SEC-4). */
+  k?: string | null;
 }
 
 /**
@@ -40,6 +43,17 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
   const vehicle = await storage.getVehicle(input.vid);
   if (!vehicle) return { status: 'vehicle_not_found' };
 
+  // Per-vehicle webhook auth (SEC-4). Phase 1: a vehicle with a webhookSecret whose request omits/mismatches
+  // `k` is still processed, but the state is reported so migration is observable. Once every device has
+  // re-registered with `&k=`, flip WEBHOOK_AUTH_REQUIRED to reject 'unauthenticated'.
+  const vehicleAuth = classifyVehicleWebhookAuth(vehicle.webhookSecret, input.k);
+  if (WEBHOOK_AUTH_REQUIRED && vehicleAuth === 'unauthenticated') {
+    return { status: 'unauthorized', vehicleAuth };
+  }
+  if (vehicleAuth === 'unauthenticated') {
+    log?.(`vehicle ${input.vid}: webhook missing/invalid per-vehicle secret (accepted — Phase 1)`);
+  }
+
   const event = input.event || 'sensor alert';
   const device = sanitizeDevice(input.device);
   const isFlood = isFloodShutoff(event);
@@ -47,11 +61,21 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
   const nowMs = now();
   const extra = extractSensorStateExtras(input.params);
 
+  // Enforce tier device limits (Free: 3, Basic: 6, Premium: 20)
+  const limitForTier = (tier?: Tier) => (tier === 'free' ? 3 : tier === 'basic' ? 6 : 20);
+  const prev = await storage.getSensorState(input.vid, device);
+  if (!prev) { // New device
+    const linkTapCount = vehicle.linktap?.taplinkerIds?.length || 0;
+    const shellyCount = await storage.countSensorStates(input.vid);
+    if ((linkTapCount + shellyCount) >= limitForTier(vehicle.tier)) {
+      return { status: 'device_limit_reached' } as unknown as WebhookResult;
+    }
+  }
+
   // Tier-aware persistence throttle — telemetry only; flood/alarm always persist.
   let persisted = true;
   const resolutionSec = telemetryResolutionSecForTier(vehicle.tier);
   if (telemetry && resolutionSec > TELEMETRY_RESOLUTION_SEC.premium) {
-    const prev = await storage.getSensorState(input.vid, device);
     persisted = shouldPersistTelemetry(nowMs, prev?.at ?? null, resolutionSec);
   }
   if (persisted) {
@@ -96,6 +120,7 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
 
   // Push: real alerts only (telemetry never pushes). Count real FCM acceptances.
   let notified = 0; let pushFailed = 0;
+  let messagesSent = 0; let messagesAttempted = 0;
   if (!telemetry) {
     const name = vehicle.name || 'your vehicle';
     const title = `🚨 ${name}`;
@@ -108,7 +133,28 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
         (await notify.sendPush(token, title, body)) ? notified++ : pushFailed++;
       }
     }
+
+    if (deps.messageSenders && deps.messageSenders.length > 0) {
+      for (const sender of deps.messageSenders) {
+        let rawPrefs: string | undefined;
+        if (sender.id === 'sms') rawPrefs = vehicle.sh_sms_prefs;
+        else if (sender.id === 'whatsapp') rawPrefs = vehicle.sh_whatsapp_prefs;
+        else if (sender.id === 'telegram') rawPrefs = vehicle.sh_telegram_prefs;
+        
+        const prefs = parseMessagingPrefs(rawPrefs);
+        const recipients = recipientsForEvent(vehicle.tier, prefs, event);
+        messagesAttempted += recipients.length;
+        for (const to of recipients) {
+          try {
+            const r = await sender.sendMessage(to, body);
+            if (r.ok) messagesSent++;
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
   }
 
-  return { status: 'ok', event, telemetry, persisted, notified, pushFailed, shutoff };
+  return { status: 'ok', vehicleAuth, event, telemetry, persisted, notified, pushFailed, messagesSent, messagesAttempted, shutoff };
 }

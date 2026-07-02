@@ -9,10 +9,10 @@ server did (`persisted`, `notified`, `pushFailed`, `shutoff`). Replay one with c
 ## Quick health check
 
 ```bash
-curl http://localhost:3030/healthz                       # → {"ok":true}
+curl http://localhost:3030/healthz                       # → {"ok":true}  (public API port)
 docker compose ps                                        # STATUS "healthy"?
 docker compose logs -f brvg-cloud-server                 # live logs (flood events are logged)
-curl -u admin:$ADMIN_PASSWORD http://localhost:3030/admin/api/status
+curl -u admin:$ADMIN_PASSWORD http://localhost:3031/admin/api/status   # admin is on ADMIN_PORT (3031)
 ```
 
 `/admin/api/status` tells you at a glance whether the API key is set, auth is disabled, what the
@@ -79,16 +79,25 @@ Note `notified`/`pushFailed` count only users that had a token; telemetry events
 Retention windows apply at write time, and long-term samples are downsampled to hourly past 7 days
 with a 5000-sample-per-device cap — old gaps in dense data are expected, not a bug.
 
+## Can't reach the admin UI
+
+**Symptom:** `http://<server>:3030/admin` or `/` returns 404 / connection refused.
+
+| Cause | How to tell | Fix |
+| --- | --- | --- |
+| Admin is on a **different port** | The public API answers on `3030` but the admin UI doesn't | The admin console listens on `ADMIN_PORT` (default `3031`), served at that port's root (`http://<server>:3031/`), not on `3030` and not at `/admin` on `3030` |
+| Port `3031` isn't published | The shipped `docker-compose.yml`/`Dockerfile` publish only `3030` | Reach it host-locally: `ssh -L 3031:localhost:3031 <host>` then open `http://localhost:3031/`, or add `- "127.0.0.1:3031:3031"` to compose `ports:`. Avoid publishing `3031` to the internet |
+
 ## Admin login fails
 
-**Symptom:** `/admin` keeps prompting or returns 401.
+**Symptom:** the admin UI keeps prompting or returns 401.
 
 | Cause | How to tell | Fix |
 | --- | --- | --- |
 | `ADMIN_PASSWORD` not set | 401 no matter what you type | The server denies **all** admin access when the env var is unset. Set it in `.env` and restart |
 | Wrong password | — | Only the password is checked; the username can be anything |
 | Shell/compose quoting mangled the value | Special characters in the password | Quote it in `.env`, or pick a long alphanumeric password |
-| Proxy stripping the `Authorization` header | Works on `localhost:3030`, fails through the proxy | Ensure the reverse proxy forwards `Authorization` (nginx does by default; check custom configs) |
+| Proxy stripping the `Authorization` header | Works on `localhost:3031`, fails through the proxy | Ensure the reverse proxy forwards `Authorization` (nginx does by default; check custom configs) |
 
 ## Container won't start / data not persisting
 
