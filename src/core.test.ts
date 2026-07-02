@@ -22,6 +22,9 @@ function input(over: Partial<ShellyWebhookInput> & { event: string }): ShellyWeb
 beforeEach(() => {
   shutoffCalls = []; pushCalls = []; nowMs = 1_000_000_000_000;
   storage = new MemoryStorage();
+  // Default the test instance to auth-disabled so the logic-focused tests aren't gated by the
+  // fail-closed default; the auth describe block overrides this to exercise the gate.
+  storage.setSetting('allowUnauthenticated', 'true');
   storage.putVehicle({
     vid: 'v1', name: 'Boaty', tier: 'premium', allowedUsers: ['u1'],
     linktap: { username: 'u', apiKey: 'k', gatewayId: 'gw', taplinkerIds: ['t1', 't2'] },
@@ -110,6 +113,19 @@ describe('non-flood alerts', () => {
 });
 
 describe('auth + validation', () => {
+  it('FAILS CLOSED: a key-less instance rejects webhooks by default', async () => {
+    storage.setSetting('allowUnauthenticated', 'false'); // no apiKey, not opted out
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm' }), deps());
+    expect(r.status).toBe('unauthorized');
+    expect(shutoffCalls).toHaveLength(0);
+  });
+
+  it('allows unauthenticated webhooks only when the operator explicitly opts out', async () => {
+    // allowUnauthenticated=true is set in beforeEach; no apiKey configured.
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm' }), deps());
+    expect(r.status).toBe('ok');
+  });
+
   it('rejects a wrong API key when one is configured', async () => {
     await storage.setSetting('apiKey', 'secret');
     const r = await handleShellyWebhook(input({ event: 'flood.alarm', key: 'wrong' }), deps());

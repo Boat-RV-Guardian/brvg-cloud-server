@@ -9,6 +9,7 @@ import { LinkTapCloud } from './linktap.js';
 import { createFcmNotifier, NullNotifier } from './notify.js';
 import { handleShellyWebhook } from './core.js';
 import { renderAdminPage, handleAdminApi, checkAdminAuth } from './admin.js';
+import { keyAuthorized } from './auth.js';
 import type { Deps } from './types.js';
 
 const PORT = Number(process.env.PORT || 3030);
@@ -61,7 +62,8 @@ const server = createServer(async (req, res) => {
     // History read (charts/trends). Same API-key auth as webhooks.
     if (url.pathname === '/api/history') {
       const requiredKey = await storage.getSetting('apiKey');
-      if (requiredKey && url.searchParams.get('key') !== requiredKey) return json(res, 401, { status: 'unauthorized' });
+      const allowUnauth = (await storage.getSetting('allowUnauthenticated')) === 'true';
+      if (!keyAuthorized(requiredKey, allowUnauth, url.searchParams.get('key'))) return json(res, 401, { status: 'unauthorized' });
       const vid = url.searchParams.get('vid');
       const device = url.searchParams.get('device');
       if (!vid || !device) return json(res, 400, { error: 'vid + device required' });

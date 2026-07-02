@@ -7,6 +7,7 @@ import {
   telemetryResolutionSecForTier, shouldPersistTelemetry, TELEMETRY_RESOLUTION_SEC,
   historyRetentionDaysForTier,
 } from './events.js';
+import { keyAuthorized } from './auth.js';
 import type { Deps, WebhookResult, ShutoffResult } from './types.js';
 
 export interface ShellyWebhookInput {
@@ -26,10 +27,12 @@ export interface ShellyWebhookInput {
 export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps): Promise<WebhookResult> {
   const { storage, notify, linktap, now, log } = deps;
 
-  // Auth: if the instance has an API key configured, the request must present it. (Self-host servers
-  // are public endpoints; the key is how a device proves it belongs to this instance.)
+  // Auth: self-host servers are public endpoints, so the API key is how a device proves it belongs to
+  // this instance. FAILS CLOSED — a key-less instance rejects webhooks unless the operator explicitly
+  // set allowUnauthenticated=true (see keyAuthorized). Timing-safe compare.
   const requiredKey = await storage.getSetting('apiKey');
-  if (requiredKey && input.key !== requiredKey) {
+  const allowUnauth = (await storage.getSetting('allowUnauthenticated')) === 'true';
+  if (!keyAuthorized(requiredKey, allowUnauth, input.key)) {
     return { status: 'unauthorized' };
   }
 
