@@ -8,7 +8,8 @@ import {
   historyRetentionDaysForTier,
 } from './events.js';
 import { keyAuthorized } from './auth.js';
-import type { Deps, WebhookResult, ShutoffResult } from './types.js';
+import { parseMessagingPrefs, recipientsForEvent } from './messaging.js';
+import type { Deps, WebhookResult, ShutoffResult, Tier } from './types.js';
 
 export interface ShellyWebhookInput {
   vid: string | null;
@@ -47,11 +48,21 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
   const nowMs = now();
   const extra = extractSensorStateExtras(input.params);
 
+  // Enforce tier device limits (Free: 3, Basic: 6, Premium: 20)
+  const limitForTier = (tier?: Tier) => (tier === 'free' ? 3 : tier === 'basic' ? 6 : 20);
+  const prev = await storage.getSensorState(input.vid, device);
+  if (!prev) { // New device
+    const linkTapCount = vehicle.linktap?.taplinkerIds?.length || 0;
+    const shellyCount = await storage.countSensorStates(input.vid);
+    if ((linkTapCount + shellyCount) >= limitForTier(vehicle.tier)) {
+      return { status: 'device_limit_reached' } as unknown as WebhookResult;
+    }
+  }
+
   // Tier-aware persistence throttle — telemetry only; flood/alarm always persist.
   let persisted = true;
   const resolutionSec = telemetryResolutionSecForTier(vehicle.tier);
   if (telemetry && resolutionSec > TELEMETRY_RESOLUTION_SEC.premium) {
-    const prev = await storage.getSensorState(input.vid, device);
     persisted = shouldPersistTelemetry(nowMs, prev?.at ?? null, resolutionSec);
   }
   if (persisted) {
@@ -96,6 +107,7 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
 
   // Push: real alerts only (telemetry never pushes). Count real FCM acceptances.
   let notified = 0; let pushFailed = 0;
+  let messagesSent = 0; let messagesAttempted = 0;
   if (!telemetry) {
     const name = vehicle.name || 'your vehicle';
     const title = `🚨 ${name}`;
@@ -108,7 +120,28 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
         (await notify.sendPush(token, title, body)) ? notified++ : pushFailed++;
       }
     }
+
+    if (deps.messageSenders && deps.messageSenders.length > 0) {
+      for (const sender of deps.messageSenders) {
+        let rawPrefs: string | undefined;
+        if (sender.id === 'sms') rawPrefs = vehicle.sh_sms_prefs;
+        else if (sender.id === 'whatsapp') rawPrefs = vehicle.sh_whatsapp_prefs;
+        else if (sender.id === 'telegram') rawPrefs = vehicle.sh_telegram_prefs;
+        
+        const prefs = parseMessagingPrefs(rawPrefs);
+        const recipients = recipientsForEvent(vehicle.tier, prefs, event);
+        messagesAttempted += recipients.length;
+        for (const to of recipients) {
+          try {
+            const r = await sender.sendMessage(to, body);
+            if (r.ok) messagesSent++;
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
   }
 
-  return { status: 'ok', event, telemetry, persisted, notified, pushFailed, shutoff };
+  return { status: 'ok', event, telemetry, persisted, notified, pushFailed, messagesSent, messagesAttempted, shutoff };
 }

@@ -37,6 +37,9 @@ export class MemoryStorage implements Storage {
   }
   async getVehicle(vid: string) { return this.db.vehicles[vid] ?? null; }
   async getSensorState(vid: string, device: string) { return this.db.sensorState[`${vid}/${device}`] ?? null; }
+  async countSensorStates(vid: string) {
+    return Object.keys(this.db.sensorState).filter(k => vidOfKey(k) === vid).length;
+  }
   async putSensorState(vid: string, device: string, state: SensorState) {
     const key = `${vid}/${device}`;
     if (!(key in this.db.sensorState)) this.evictOldestDeviceIfOverCap(vid);

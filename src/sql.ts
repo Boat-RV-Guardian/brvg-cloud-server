@@ -60,6 +60,13 @@ export class SqlStorage implements Storage {
     );
   }
 
+  async countSensorStates(vid: string): Promise<number> {
+    const row = await this.db.get<{ count: number }>(
+      'SELECT COUNT(*) as count FROM sensor_state WHERE vid = ?', [vid]
+    );
+    return row ? Number(row.count) : 0;
+  }
+
   async getSensorState(vid: string, device: string): Promise<SensorState | null> {
     const row = await this.db.get<{ json: string }>(
       'SELECT json FROM sensor_state WHERE vid = ? AND device = ?', [vid, device],

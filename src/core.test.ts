@@ -145,3 +145,24 @@ describe('auth + validation', () => {
     expect((await handleShellyWebhook({ vid: 'nope', event: 'x', device: 'd', params: [] }, deps())).status).toBe('vehicle_not_found');
   });
 });
+
+describe('device limits', () => {
+  it('rejects a new device if the tier limit is reached', async () => {
+    // free tier allows 3 devices
+    storage.putVehicle({
+      vid: 'v2', name: 'Boaty Free', tier: 'free', allowedUsers: [],
+      linktap: { taplinkerIds: ['t1'] } // 1 LinkTap device
+    });
+    // Add 2 shelly devices (total 3)
+    await storage.putSensorState('v2', 'dev1', { event: 'online', at: 0, extra: {} });
+    await storage.putSensorState('v2', 'dev2', { event: 'online', at: 0, extra: {} });
+    
+    // 4th device should be rejected
+    const res = await handleShellyWebhook(input({ vid: 'v2', device: 'dev3', event: 'online' }), deps());
+    expect(res.status).toBe('device_limit_reached');
+    
+    // Existing device should be accepted
+    const res2 = await handleShellyWebhook(input({ vid: 'v2', device: 'dev1', event: 'online' }), deps());
+    expect(res2.status).toBe('ok');
+  });
+});
