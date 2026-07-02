@@ -22,6 +22,13 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      - name: Worker bundle (wrangler dry-run)
+        # Build-verify the Cloudflare Worker adapter (src/worker.ts) — `tsc`/`npm run build` compile the
+        # Node server but never bundle the worker entry, so a broken worker.ts / wrangler.toml would ship
+        # silently. Pinned npx (no lockfile dep); dry-run needs no D1 binding or secrets.
+        run: npx --yes wrangler@4 deploy --dry-run
+        env:
+          WRANGLER_SEND_METRICS: "false"
 
   docker:
     runs-on: ubuntu-latest
