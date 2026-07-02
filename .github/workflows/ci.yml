@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install
+      - run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Unit tests
