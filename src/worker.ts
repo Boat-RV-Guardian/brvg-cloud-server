@@ -2,6 +2,7 @@
 
 import { decodeProtectedHeader, importX509, jwtVerify } from 'jose';
 import { handleShellyWebhook } from './core.js';
+import { handleLinkTapWebhook } from './linktapCore.js';
 import { FirestoreStorage } from './firestore.js';
 import { LinkTapCloud } from './linktap.js';
 import { createFcmNotifier, NullNotifier } from './notify.js';
@@ -249,6 +250,16 @@ export default {
       }
       if (url.pathname === '/api/trial' && request.method === 'POST') {
         return await handleTrial(env, request, storage);
+      }
+
+      // LinkTap webhook callbacks (setWebHookUrl). POST JSON; routed to a vehicle by gatewayId.
+      // TODO(auth): before registering this live, gate on a shared secret embedded in the registered URL.
+      if (url.pathname === '/api/linktap' && request.method === 'POST') {
+        let body: unknown = null;
+        try { body = await request.json(); } catch { /* leave null → ignored */ }
+        const result = await handleLinkTapWebhook(body as any, deps);
+        const code = result.status === 'ok' ? 200 : result.status === 'vehicle_not_found' ? 404 : 400;
+        return json(result, code);
       }
 
       if (url.pathname === '/api/shelly') {
