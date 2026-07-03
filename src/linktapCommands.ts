@@ -33,7 +33,33 @@ export const ENDPOINTS = {
   sevenDay: `${BASE}/activateSevenDayMode`,
   month: `${BASE}/activateMonthMode`,
   calendar: `${BASE}/activateCalendarMode`,
+  setWebhook: `${BASE}/setWebHookUrl`,
+  deleteWebhook: `${BASE}/deleteWebHookUrl`,
+  getApiKey: `${BASE}/getApiKey`,
 } as const;
+
+/** Account-level credentials (username + apiKey) — for the webhook + key APIs (no per-valve id). */
+export interface LinkTapAccount {
+  username: string;
+  apiKey: string;
+}
+
+export function setWebhookBody(a: LinkTapAccount, webHookUrl: string): Record<string, unknown> {
+  return { username: a.username, apiKey: a.apiKey, webHookUrl };
+}
+
+export function deleteWebhookBody(a: LinkTapAccount): Record<string, unknown> {
+  return { username: a.username, apiKey: a.apiKey };
+}
+
+/**
+ * getApiKey body: username + PASSWORD (optionally `replace:true` to rotate). The password is used for
+ * this one call only — callers MUST NOT persist it (store only the returned key). Onboarding runs this
+ * once and discards the password.
+ */
+export function getApiKeyBody(username: string, password: string, replace = false): Record<string, unknown> {
+  return replace ? { username, password, replace: true } : { username, password };
+}
 
 export function planEndpoint(mode: PlanMode): string {
   return ENDPOINTS[mode];
