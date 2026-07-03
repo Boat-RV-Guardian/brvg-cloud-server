@@ -52,6 +52,10 @@ export async function handleAdminApi(path: string, method: string, body: string,
       allowedUsers: Array.isArray(b.allowedUsers) ? b.allowedUsers.map(String) : [],
       linktap: b.linktap || undefined,
       webhookSecret: typeof b.webhookSecret === 'string' && b.webhookSecret ? b.webhookSecret : existing?.webhookSecret,
+      // Per-vehicle alert-destination prefs (JSON {addresses,events}); preserve existing when omitted so a
+      // re-save from the form doesn't wipe them. SMS is hosted-only, so self-host only exposes WhatsApp + Telegram.
+      sh_whatsapp_prefs: typeof b.sh_whatsapp_prefs === 'string' ? (b.sh_whatsapp_prefs || undefined) : existing?.sh_whatsapp_prefs,
+      sh_telegram_prefs: typeof b.sh_telegram_prefs === 'string' ? (b.sh_telegram_prefs || undefined) : existing?.sh_telegram_prefs,
     };
     await storage.putVehicle(v);
     return send(200, { ok: true, vid: v.vid });
