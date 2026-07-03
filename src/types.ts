@@ -1,5 +1,7 @@
 // Transport-agnostic types shared by the core handler and its adapters.
 
+import type { LinkTapCreds, InstantOpts, AlarmCode, PlanMode, PauseOpts } from './linktapCommands.js';
+
 export type Tier = 'free' | 'basic' | 'premium';
 
 /** A vehicle's config as the server needs it (subset of the app's vehicle doc). */
@@ -92,12 +94,18 @@ export interface MessageSender {
 
 /** LinkTap cloud client seam. */
 export interface LinkTapClient {
-  shutoff(config: {
-    username: string;
-    apiKey: string;
-    gatewayId: string;
-    taplinkerId: string;
-  }): Promise<void>;
+  /** Close the valve (activateInstantMode action:false). */
+  shutoff(config: LinkTapCreds): Promise<void>;
+  // The following are optional so existing test mocks (which only implement shutoff) still satisfy the
+  // interface. LinkTapCloud implements all of them.
+  /** Open the valve for a bounded duration (activateInstantMode action:true; no volume param). */
+  open?(config: LinkTapCreds, opts?: InstantOpts): Promise<void>;
+  /** Clear a latched LinkTap alarm (dismissAlarm). */
+  dismissAlarm?(config: LinkTapCreds, alarm: AlarmCode): Promise<void>;
+  /** Activate a pre-configured watering plan (used for "always open" so it survives a cloud outage). */
+  activatePlan?(config: LinkTapCreds, mode: PlanMode): Promise<void>;
+  /** Pause the active watering plan (travel mode). */
+  pausePlan?(config: LinkTapCreds, opts: PauseOpts): Promise<void>;
 }
 
 /**

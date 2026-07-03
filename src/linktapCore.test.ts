@@ -80,31 +80,56 @@ describe('alerts', () => {
 });
 
 describe('auto-recover (opt-in, benign only)', () => {
+  let dismissed: { alarm: string }[];
+  let opened: { durationMin?: number }[];
+  const spyLinktap: LinkTapClient = {
+    async shutoff() {},
+    async dismissAlarm(_c, alarm) { dismissed.push({ alarm }); },
+    async open(_c, opts) { opened.push({ durationMin: opts?.durationMin }); },
+  };
   const withRecover = (on: boolean) => {
     storage.putVehicle({
       vid: 'v1', name: 'Boaty', tier: 'premium', allowedUsers: ['u1'], linktapAutoRecover: on,
       linktap: { username: 'u', apiKey: 'k', gatewayId: GW, taplinkerIds: [DEV] },
     });
   };
+  beforeEach(() => { dismissed = []; opened = []; });
 
-  it('is false by default (notify + leave closed)', async () => {
-    const r = await handleLinkTapWebhook(body({ event: 'water cut-off alert' }), deps());
+  it('is false by default (notify + leave closed) and never touches the valve', async () => {
+    const r = await handleLinkTapWebhook(body({ event: 'water cut-off alert' }), deps({ linktap: spyLinktap }));
     expect(r.autoRecover).toBe(false);
+    expect(r.recovered).toBe(false);
     expect(r.notified).toBe(1); // still notified
+    expect(dismissed).toHaveLength(0);
+    expect(opened).toHaveLength(0);
   });
 
-  it('is true for a benign alarm (water cut-off) when opted in', async () => {
+  it('clears + reopens a benign alarm (water cut-off) when opted in', async () => {
     withRecover(true);
-    expect((await handleLinkTapWebhook(body({ event: 'water cut-off alert' }), deps())).autoRecover).toBe(true);
-    expect((await handleLinkTapWebhook(body({ event: 'unusually low flow alert' }), deps())).autoRecover).toBe(true);
+    const r = await handleLinkTapWebhook(body({ event: 'water cut-off alert' }), deps({ linktap: spyLinktap }));
+    expect(r.autoRecover).toBe(true);
+    expect(r.recovered).toBe(true);
+    expect(r.notified).toBe(1); // still notified even when auto-recovering
+    expect(dismissed).toEqual([{ alarm: 'noWater' }]);
+    expect(opened[0].durationMin).toBe(1439); // bounded reopen (autoBack resumes any plan)
+  });
+
+  it('also recovers unusually-low-flow', async () => {
+    withRecover(true);
+    const r = await handleLinkTapWebhook(body({ event: 'unusually low flow alert' }), deps({ linktap: spyLinktap }));
+    expect(r.recovered).toBe(true);
+    expect(dismissed).toEqual([{ alarm: 'pcFlag' }]);
   });
 
   it('NEVER auto-recovers high flow / valve broken / device fall / freeze even when opted in', async () => {
     withRecover(true);
     for (const event of ['unusually high flow alert', 'valve broken alert', 'device fall alert', 'freeze alert']) {
-      const r = await handleLinkTapWebhook(body({ event }), deps());
+      const r = await handleLinkTapWebhook(body({ event }), deps({ linktap: spyLinktap }));
       expect(r.autoRecover, event).toBe(false);
+      expect(r.recovered, event).toBe(false);
       expect(r.notified, event).toBe(1); // but still notified
     }
+    expect(dismissed).toHaveLength(0);
+    expect(opened).toHaveLength(0);
   });
 });

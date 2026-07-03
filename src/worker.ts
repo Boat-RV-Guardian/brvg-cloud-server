@@ -3,6 +3,7 @@
 import { decodeProtectedHeader, importX509, jwtVerify } from 'jose';
 import { handleShellyWebhook } from './core.js';
 import { handleLinkTapWebhook } from './linktapCore.js';
+import { ENDPOINTS, instantModeBody, type LinkTapCreds } from './linktapCommands.js';
 import { FirestoreStorage } from './firestore.js';
 import { LinkTapCloud } from './linktap.js';
 import { createFcmNotifier, NullNotifier } from './notify.js';
@@ -75,22 +76,14 @@ function buildDeps(env: Env): { deps: Deps; storage: FirestoreStorage } | null {
   return { deps: { storage, notify, messageSenders, ntfy: ntfyClient, linktap: LinkTapCloud, now: () => Date.now(), log: (m) => console.log(m) }, storage };
 }
 
-async function triggerLinkTapInstant(config: any, action: ControlAction, durationMins: number, vol?: number): Promise<void> {
-  const payload: any = {
-    username: config.username,
-    apiKey: config.apiKey,
-    gatewayId: config.gatewayId,
-    taplinkerId: config.taplinkerId,
-    action: action === 'open',
-    duration: action === 'open' ? durationMins : 0,
-    autoBack: true,
-  };
-  if (action === 'open' && typeof vol === 'number' && vol > 0) payload.vol = vol;
-
-  const res = await fetch('https://www.link-tap.com/api/activateInstantMode', {
+async function triggerLinkTapInstant(config: LinkTapCreds, action: ControlAction, durationMins: number): Promise<void> {
+  // activateInstantMode has NO volume parameter — the valve is bounded by `duration` (+ the hardware
+  // self-limit). A prior `vol` field was invalid and part of the 400s we saw. Body built by the shared
+  // pure builder so the shape stays correct + tested.
+  const res = await fetch(ENDPOINTS.instant, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(instantModeBody(config, action === 'open', { durationMin: durationMins })),
   });
   if (!res.ok) throw new Error(`LinkTap API failure: ${await res.text()}`);
   const data: any = await res.json();
@@ -139,7 +132,7 @@ async function handleControl(env: Env, request: Request, storage: FirestoreStora
   let ok = 0; let lastErr = '';
   for (const tap of lt.taplinkerIds) {
     try {
-      await triggerLinkTapInstant({ username: lt.username, apiKey: lt.apiKey, gatewayId: lt.gatewayId, taplinkerId: tap }, action, valRes.durationMins || 0, valRes.vol);
+      await triggerLinkTapInstant({ username: lt.username, apiKey: lt.apiKey, gatewayId: lt.gatewayId, taplinkerId: tap }, action, valRes.durationMins || 0);
       ok++;
     } catch (e: any) { lastErr = String(e?.message || e); }
   }
