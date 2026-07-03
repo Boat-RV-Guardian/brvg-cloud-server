@@ -11,6 +11,7 @@ import { LinkTapCloud } from './linktap.js';
 import { createFcmNotifier, NullNotifier } from './notify.js';
 import { ntfyClient } from './ntfy.js';
 import { handleShellyWebhook } from './core.js';
+import { handleLinkTapWebhook } from './linktapCore.js';
 import { handleAdminApi, checkAdminAuth } from './admin.js';
 import { keyAuthorized } from './auth.js';
 import type { Deps } from './types.js';
@@ -65,6 +66,16 @@ const server = createServer(async (req, res) => {
       const code = result.status === 'ok' ? 200
         : result.status === 'unauthorized' ? 401
         : result.status === 'vehicle_not_found' ? 404 : 400;
+      return json(res, code, result);
+    }
+
+    // LinkTap webhook callbacks (setWebHookUrl). POST JSON; routed to a vehicle by gatewayId.
+    // TODO(auth): before registering this live, gate on a shared secret embedded in the registered URL.
+    if (url.pathname === '/api/linktap' && req.method === 'POST') {
+      let body: unknown = null;
+      try { body = JSON.parse(await readBody(req)); } catch { /* leave null → ignored */ }
+      const result = await handleLinkTapWebhook(body as any, deps);
+      const code = result.status === 'ok' ? 200 : result.status === 'vehicle_not_found' ? 404 : 400;
       return json(res, code, result);
     }
 

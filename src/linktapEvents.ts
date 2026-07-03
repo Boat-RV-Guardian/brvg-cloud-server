@@ -120,6 +120,16 @@ export function linkTapAlarmCode(name: string): LinkTapAlarmCode | null {
   return classifyLinkTapName(name).alarmCode ?? null;
 }
 
+/**
+ * Whether an alarm is safe to auto-clear + reopen for an always-on valve (opt-in per vehicle).
+ * ONLY benign no-flow conditions: `noWater` (supply off / no draw) and `pcFlag` (unusually low flow).
+ * NEVER `pbFlag` (unusually high flow — possible burst), `valveBroken`, or `fallFlag` — those are real
+ * faults and must stay closed until a human acts. Freeze has no code and is likewise non-recoverable.
+ */
+export function isAutoRecoverableAlarm(code: LinkTapAlarmCode | null | undefined): boolean {
+  return code === 'noWater' || code === 'pcFlag';
+}
+
 function num(v: unknown): number | undefined {
   if (v === undefined || v === null || v === '') return undefined;
   const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.\-]/g, ''));

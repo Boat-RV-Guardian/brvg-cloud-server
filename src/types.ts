@@ -30,6 +30,12 @@ export interface VehicleConfig {
   ntfyServer?: string;
   /** Optional ntfy access token (for a protected topic/instance). */
   ntfyToken?: string;
+  /**
+   * Opt-in: on a *benign* LinkTap alarm (water cut-off / low flow) the server auto-clears it and
+   * reopens (with a notification). Default off → notify + leave closed. High-flow / valve-broken /
+   * device-fall / freeze never auto-recover regardless (see isAutoRecoverableAlarm).
+   */
+  linktapAutoRecover?: boolean;
 }
 
 /** Cached last-known state for a device (what the app reads when off-LAN). */
