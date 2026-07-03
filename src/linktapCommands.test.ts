@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   instantModeBody, dismissAlarmBody, pauseBody, planEndpoint, isRateLimited,
+  setWebhookBody, deleteWebhookBody, getApiKeyBody,
   INSTANT_MODE_MAX_MIN, type LinkTapCreds,
 } from './linktapCommands.js';
 
@@ -69,6 +70,20 @@ describe('planEndpoint', () => {
     expect(planEndpoint('sevenDay')).toContain('/activateSevenDayMode');
     expect(planEndpoint('month')).toContain('/activateMonthMode');
     expect(planEndpoint('calendar')).toContain('/activateCalendarMode');
+  });
+});
+
+describe('account bodies (webhook + key)', () => {
+  const acct = { username: 'u', apiKey: 'k' };
+  it('setWebhookBody carries username/apiKey/webHookUrl', () => {
+    expect(setWebhookBody(acct, 'https://x/api/linktap')).toEqual({ username: 'u', apiKey: 'k', webHookUrl: 'https://x/api/linktap' });
+  });
+  it('deleteWebhookBody carries just the account', () => {
+    expect(deleteWebhookBody(acct)).toEqual({ username: 'u', apiKey: 'k' });
+  });
+  it('getApiKeyBody omits replace unless rotating', () => {
+    expect(getApiKeyBody('u', 'pw')).toEqual({ username: 'u', password: 'pw' });
+    expect(getApiKeyBody('u', 'pw', true)).toEqual({ username: 'u', password: 'pw', replace: true });
   });
 });
 
