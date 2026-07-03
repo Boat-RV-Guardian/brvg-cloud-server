@@ -9,8 +9,9 @@
 // Auto-recover (opt-in, benign alarms only) needs the LinkTap command client (dismissAlarm + reopen)
 // which lands with the command-relay slice — here we only compute + report eligibility and log it.
 
-import { parseLinkTapWebhook, isAutoRecoverableAlarm, type LinkTapWebhookBody, type LinkTapKind } from './linktapEvents.js';
+import { parseLinkTapWebhook, isAutoRecoverableAlarm, type LinkTapWebhookBody, type LinkTapKind, type LinkTapAlarmCode } from './linktapEvents.js';
 import { sanitizeDevice, telemetryResolutionSecForTier, shouldPersistTelemetry, TELEMETRY_RESOLUTION_SEC } from './events.js';
+import { INSTANT_MODE_MAX_MIN } from './linktapCommands.js';
 import type { Deps, VehicleConfig } from './types.js';
 
 export interface LinkTapWebhookResult {
@@ -25,8 +26,10 @@ export interface LinkTapWebhookResult {
   ntfied?: boolean;
   messagesSent?: number;
   messagesAttempted?: number;
-  /** True when this alarm would be auto-recovered (opt-in + benign). Actual clear/reopen: command slice. */
+  /** True when this alarm is eligible for auto-recovery (opt-in + benign). */
   autoRecover?: boolean;
+  /** True when the auto-recovery (dismissAlarm + bounded reopen) actually ran on ≥1 valve. */
+  recovered?: boolean;
 }
 
 const eqId = (a?: string, b?: string) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -106,15 +109,50 @@ export async function handleLinkTapWebhook(body: LinkTapWebhookBody | null | und
     }
   }
 
-  // Auto-recover eligibility (opt-in + benign only). The actual dismissAlarm + reopen lands with the
-  // command relay; here we just decide + report + log so behavior is observable.
+  // Auto-recover (opt-in + BENIGN alarms only — noWater/low-flow; never high-flow/valve-broken/fall/
+  // freeze; enforced by isAutoRecoverableAlarm). Clear the latch, then reopen for a bounded instant
+  // (autoBack:true so a watering plan resumes afterward). We always still push the alert above.
   const autoRecover = ev.kind === 'alarm' && vehicle.linktapAutoRecover === true && isAutoRecoverableAlarm(ev.alarmCode ?? null);
-  if (ev.kind === 'alarm') {
-    log?.(`linktap alarm ${ev.name} on ${vehicle.vid}: autoRecover=${autoRecover} (recover wiring pending command slice)`);
+  let recovered = false;
+  if (autoRecover && ev.alarmCode) {
+    recovered = await runAutoRecover(deps, vehicle, ev.deviceId, ev.alarmCode);
+    log?.(`linktap auto-recover ${ev.name} on ${vehicle.vid}: recovered=${recovered}`);
+  } else if (ev.kind === 'alarm') {
+    log?.(`linktap alarm ${ev.name} on ${vehicle.vid}: notify-only (autoRecover eligible=${autoRecover})`);
   }
 
   return {
     status: 'ok', vid: vehicle.vid, event: ev.name, kind: ev.kind, persisted,
-    notified, pushFailed, ntfied, messagesSent, messagesAttempted, autoRecover,
+    notified, pushFailed, ntfied, messagesSent, messagesAttempted, autoRecover, recovered,
   };
+}
+
+/** dismissAlarm + bounded reopen for the alarming valve(s). Returns true if it ran on ≥1 valve. */
+async function runAutoRecover(
+  deps: Deps,
+  vehicle: VehicleConfig,
+  deviceId: string,
+  alarm: LinkTapAlarmCode, // caller guarantees this is a benign code (isAutoRecoverableAlarm)
+): Promise<boolean> {
+  const lt = vehicle.linktap;
+  const { linktap, log } = deps;
+  if (!lt?.username || !lt.apiKey || !lt.gatewayId || !linktap.dismissAlarm || !linktap.open) return false;
+
+  // Target the valve that alarmed (deviceId may be the 16-char prefix of an 18-char ValveLinker id).
+  const all = (lt.taplinkerIds || []).filter(Boolean);
+  const matched = all.filter((t) => t === deviceId || (deviceId && t.startsWith(deviceId)));
+  const targets = matched.length ? matched : deviceId ? [deviceId] : all;
+
+  let ok = false;
+  for (const taplinkerId of targets) {
+    const creds = { username: lt.username, apiKey: lt.apiKey, gatewayId: lt.gatewayId, taplinkerId };
+    try {
+      await linktap.dismissAlarm(creds, alarm);
+      await linktap.open(creds, { durationMin: INSTANT_MODE_MAX_MIN, autoBack: true });
+      ok = true;
+    } catch (e: any) {
+      log?.(`linktap auto-recover failed on ${taplinkerId}: ${e?.message || e}`);
+    }
+  }
+  return ok;
 }
