@@ -53,7 +53,11 @@ export async function handleAdminApi(path: string, method: string, body: string,
       linktap: b.linktap || undefined,
       webhookSecret: typeof b.webhookSecret === 'string' && b.webhookSecret ? b.webhookSecret : existing?.webhookSecret,
       // Note: third-party messaging (SMS/WhatsApp/Telegram) is hosted-cloud only, so the self-host admin
-      // does NOT set per-vehicle message destinations — self-host remote alerts use FCM push.
+      // does NOT set per-vehicle message destinations. FREE self-host push is ntfy — set a topic here and
+      // subscribe to it in the ntfy app. Preserve existing values when a field is omitted.
+      ntfyTopic: typeof b.ntfyTopic === 'string' ? (b.ntfyTopic || undefined) : existing?.ntfyTopic,
+      ntfyServer: typeof b.ntfyServer === 'string' ? (b.ntfyServer || undefined) : existing?.ntfyServer,
+      ntfyToken: typeof b.ntfyToken === 'string' ? (b.ntfyToken || undefined) : existing?.ntfyToken,
     };
     await storage.putVehicle(v);
     return send(200, { ok: true, vid: v.vid });

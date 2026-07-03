@@ -171,10 +171,17 @@ vehicleForm.addEventListener('submit', async (e) => {
     allowedUsers: document.getElementById('v-users').value.split(',').map(s => s.trim()).filter(Boolean)
   };
 
-  // Only include the webhook secret when entered, so a blank field keeps the existing value server-side.
-  // (Third-party messaging destinations are hosted-cloud only — not configured on self-host.)
+  // Only include a field when entered, so a blank input keeps the existing value server-side.
+  // (Third-party messaging destinations are hosted-cloud only — not configured on self-host; ntfy is
+  // the free self-host push path.)
   const secret = document.getElementById('v-secret').value.trim();
   if (secret) payload.webhookSecret = secret;
+  const ntfyTopic = document.getElementById('v-ntfy-topic').value.trim();
+  if (ntfyTopic) payload.ntfyTopic = ntfyTopic;
+  const ntfyServer = document.getElementById('v-ntfy-server').value.trim();
+  if (ntfyServer) payload.ntfyServer = ntfyServer;
+  const ntfyToken = document.getElementById('v-ntfy-token').value.trim();
+  if (ntfyToken) payload.ntfyToken = ntfyToken;
 
   try {
     await apiCall('/vehicle', 'POST', payload);

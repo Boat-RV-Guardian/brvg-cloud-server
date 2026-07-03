@@ -44,6 +44,18 @@ describe('handleAdminApi — vehicle registration', () => {
     expect(v?.webhookSecret).toBe('sek'); // not wiped
   });
 
+  it('stores the ntfy free-push topic/server/token and preserves them on an omitting re-save', async () => {
+    const s = new MemoryStorage();
+    await postVehicle(s, { vid: 'v1', allowedUsers: ['u1'], ntfyTopic: 'brvg-boat', ntfyServer: 'https://push.test', ntfyToken: 'tk' });
+    let v = await s.getVehicle('v1');
+    expect(v?.ntfyTopic).toBe('brvg-boat');
+    expect(v?.ntfyServer).toBe('https://push.test');
+    expect(v?.ntfyToken).toBe('tk');
+    await postVehicle(s, { vid: 'v1', name: 'Renamed', allowedUsers: ['u1'] }); // omit ntfy fields
+    v = await s.getVehicle('v1');
+    expect(v?.ntfyTopic).toBe('brvg-boat'); // not wiped
+  });
+
   it('rejects a vehicle with no vid', async () => {
     const res = await postVehicle(new MemoryStorage(), { name: 'x' });
     expect(res.status).toBe(400);

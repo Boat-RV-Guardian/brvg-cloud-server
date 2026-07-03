@@ -204,3 +204,34 @@ describe('per-vehicle webhook auth (SEC-4, Phase 1)', () => {
     expect(st?.extra.v).toBe('12.6');
   });
 });
+
+describe('ntfy free push', () => {
+  function ntfyStub() {
+    const sent: Array<{ config: any; title: string; body: string }> = [];
+    return { sent, ntfy: { async send(config: any, title: string, body: string) { sent.push({ config, title, body }); return true; } } };
+  }
+
+  it('publishes to the vehicle ntfy topic on a real alert', async () => {
+    storage.putVehicle({ vid: 'v1', name: 'Boaty', tier: 'premium', allowedUsers: ['u1'], ntfyTopic: 'brvg-boat', ntfyServer: 'https://push.test' });
+    const { sent, ntfy } = ntfyStub();
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm' }), { ...deps(), ntfy });
+    expect(r.ntfied).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].config).toEqual({ server: 'https://push.test', topic: 'brvg-boat', token: undefined });
+    expect(sent[0].body).toContain('Flood');
+  });
+
+  it('does NOT publish when the vehicle has no ntfy topic', async () => {
+    const { sent, ntfy } = ntfyStub();
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm' }), { ...deps(), ntfy });
+    expect(r.ntfied).toBe(false);
+    expect(sent).toHaveLength(0);
+  });
+
+  it('does NOT publish on telemetry (only real alerts)', async () => {
+    storage.putVehicle({ vid: 'v1', allowedUsers: ['u1'], ntfyTopic: 'brvg-boat' });
+    const { sent, ntfy } = ntfyStub();
+    await handleShellyWebhook(input({ event: 'voltmeter.measurement' }), { ...deps(), ntfy });
+    expect(sent).toHaveLength(0);
+  });
+});

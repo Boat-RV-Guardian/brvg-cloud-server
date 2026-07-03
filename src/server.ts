@@ -9,6 +9,7 @@ import { join, extname } from 'node:path';
 import { FileStorage } from './storage.js';
 import { LinkTapCloud } from './linktap.js';
 import { createFcmNotifier, NullNotifier } from './notify.js';
+import { ntfyClient } from './ntfy.js';
 import { handleShellyWebhook } from './core.js';
 import { handleAdminApi, checkAdminAuth } from './admin.js';
 import { keyAuthorized } from './auth.js';
@@ -29,9 +30,10 @@ const notify = process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EM
   : NullNotifier;
 
 // Third-party messaging (SMS / WhatsApp / Telegram) is a HOSTED-cloud-only feature — the self-host
-// server ships no message senders. Self-host remote alerts go through the app's built-in push (FCM),
-// which needs your own Firebase project + credentials (see the notify wiring above and docs/SELF_HOST).
-const deps: Deps = { storage, notify, linktap: LinkTapCloud, now: () => Date.now(), log: (m) => console.log(m) };
+// server ships no message senders. For FREE self-host push, ntfy is wired: set a per-vehicle ntfy topic
+// in /admin and subscribe to it in the ntfy app (no Firebase project required). FCM push also works if
+// you supply your own Firebase creds (see the notify wiring above and the README).
+const deps: Deps = { storage, notify, ntfy: ntfyClient, linktap: LinkTapCloud, now: () => Date.now(), log: (m) => console.log(m) };
 
 function json(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
