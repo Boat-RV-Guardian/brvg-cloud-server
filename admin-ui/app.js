@@ -170,7 +170,17 @@ vehicleForm.addEventListener('submit', async (e) => {
     tier: document.getElementById('v-tier').value,
     allowedUsers: document.getElementById('v-users').value.split(',').map(s => s.trim()).filter(Boolean)
   };
-  
+
+  // Optional fields — only include them when the operator entered a value, so an omitted field keeps
+  // its existing value server-side instead of being cleared. Alert events default to the full set.
+  const ALERT_EVENTS = ['flood', 'low_battery', 'shore_power', 'offline'];
+  const secret = document.getElementById('v-secret').value.trim();
+  if (secret) payload.webhookSecret = secret;
+  const wa = document.getElementById('v-whatsapp').value.split(',').map(s => s.trim()).filter(Boolean);
+  if (wa.length) payload.sh_whatsapp_prefs = JSON.stringify({ addresses: wa, events: ALERT_EVENTS });
+  const tg = document.getElementById('v-telegram').value.split(',').map(s => s.trim()).filter(Boolean);
+  if (tg.length) payload.sh_telegram_prefs = JSON.stringify({ addresses: tg, events: ALERT_EVENTS });
+
   try {
     await apiCall('/vehicle', 'POST', payload);
     showToast('Vehicle saved successfully');

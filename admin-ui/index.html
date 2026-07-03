@@ -95,6 +95,18 @@
             <label for="v-users">Allowed User IDs <span class="help-text">(comma-separated)</span></label>
             <input type="text" id="v-users">
           </div>
+          <div class="form-group">
+            <label for="v-secret">Webhook secret <span class="help-text">(devices send it as &amp;k=; blank keeps the existing one)</span></label>
+            <input type="text" id="v-secret" placeholder="leave blank to keep current">
+          </div>
+          <div class="form-group">
+            <label for="v-whatsapp">WhatsApp alert numbers <span class="help-text">(comma-separated; blank keeps current)</span></label>
+            <input type="text" id="v-whatsapp" placeholder="+15551234567, +15557654321">
+          </div>
+          <div class="form-group">
+            <label for="v-telegram">Telegram chat IDs <span class="help-text">(comma-separated; blank keeps current)</span></label>
+            <input type="text" id="v-telegram" placeholder="@username, 123456789">
+          </div>
           <button type="submit" class="btn primary">Save Vehicle</button>
         </form>
       </section>
