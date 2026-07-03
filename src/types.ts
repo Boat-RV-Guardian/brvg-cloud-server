@@ -24,6 +24,12 @@ export interface VehicleConfig {
   sh_whatsapp_prefs?: string;
   /** JSON string representing TelegramPrefs */
   sh_telegram_prefs?: string;
+  /** ntfy free-push topic for this vehicle (blank ⇒ no ntfy push). Users subscribe to it in the ntfy app. */
+  ntfyTopic?: string;
+  /** ntfy server base URL (blank ⇒ https://ntfy.sh). */
+  ntfyServer?: string;
+  /** Optional ntfy access token (for a protected topic/instance). */
+  ntfyToken?: string;
 }
 
 /** Cached last-known state for a device (what the app reads when off-LAN). */
@@ -88,11 +94,31 @@ export interface LinkTapClient {
   }): Promise<void>;
 }
 
+/**
+ * ntfy push seam — a FREE, self-host-friendly push channel (https://ntfy.sh or a self-hosted ntfy).
+ * A vehicle configures a topic; the server POSTs alerts to it and users subscribe in the ntfy app.
+ * Unlike FCM, this needs no Firebase project — it's the self-host "free push" path.
+ */
+export interface NtfyConfig {
+  /** ntfy base URL (default https://ntfy.sh, or a self-hosted instance). */
+  server: string;
+  /** Topic to publish to (also what users subscribe to). Treat as a shared secret. */
+  topic: string;
+  /** Optional access token for a protected topic/instance. */
+  token?: string;
+}
+export interface NtfyClient {
+  /** Publish a notification. Returns true if ntfy accepted it. */
+  send(config: NtfyConfig, title: string, body: string, priority?: 'high' | 'default'): Promise<boolean>;
+}
+
 export interface Deps {
   storage: Storage;
   notify: Notifier;
   messageSenders?: MessageSender[];
   linktap: LinkTapClient;
+  /** Optional free push channel (ntfy). When set and a vehicle has an ntfy topic, alerts publish to it. */
+  ntfy?: NtfyClient;
   now: () => number;
   log?: (msg: string) => void;
 }
@@ -108,5 +134,7 @@ export interface WebhookResult {
   pushFailed?: number;
   messagesSent?: number;
   messagesAttempted?: number;
+  /** True if an ntfy notification was published for this alert. */
+  ntfied?: boolean;
   shutoff?: ShutoffResult | null;
 }

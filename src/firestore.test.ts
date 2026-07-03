@@ -14,6 +14,8 @@ describe('vehicleFromFields', () => {
       sh_sms_prefs: s('{"phones":["+1"],"events":["flood"]}'),
       sh_whatsapp_prefs: s('{"addresses":["+2"],"events":["flood"]}'),
       sh_telegram_prefs: s('{"addresses":["@c"],"events":["offline"]}'),
+      sh_ntfy_topic: s('brvg-boat'),
+      sh_ntfy_server: s('https://push.test'),
     });
     expect(v.vid).toBe('v1');
     expect(v.name).toBe('Boaty');
@@ -23,6 +25,8 @@ describe('vehicleFromFields', () => {
     expect(v.sh_sms_prefs).toContain('flood');          // connectors — were dropped before
     expect(v.sh_whatsapp_prefs).toContain('+2');
     expect(v.sh_telegram_prefs).toContain('@c');
+    expect(v.ntfyTopic).toBe('brvg-boat');              // ntfy free push
+    expect(v.ntfyServer).toBe('https://push.test');
   });
 
   it('leaves the optional fields undefined when the doc omits them', () => {

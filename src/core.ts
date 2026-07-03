@@ -121,6 +121,7 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
   // Push: real alerts only (telemetry never pushes). Count real FCM acceptances.
   let notified = 0; let pushFailed = 0;
   let messagesSent = 0; let messagesAttempted = 0;
+  let ntfied = false;
   if (!telemetry) {
     const name = vehicle.name || 'your vehicle';
     const title = `🚨 ${name}`;
@@ -132,6 +133,15 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
       if (token) {
         (await notify.sendPush(token, title, body)) ? notified++ : pushFailed++;
       }
+    }
+
+    // Free push (ntfy) — no Firebase needed; the self-host "free push" path. Publishes to the vehicle's
+    // topic when configured. Never throttled (alert path); errors are swallowed like the other channels.
+    if (deps.ntfy && vehicle.ntfyTopic) {
+      ntfied = await deps.ntfy.send(
+        { server: vehicle.ntfyServer || 'https://ntfy.sh', topic: vehicle.ntfyTopic, token: vehicle.ntfyToken },
+        title, body, 'high',
+      );
     }
 
     if (deps.messageSenders && deps.messageSenders.length > 0) {
@@ -156,5 +166,5 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
     }
   }
 
-  return { status: 'ok', vehicleAuth, event, telemetry, persisted, notified, pushFailed, messagesSent, messagesAttempted, shutoff };
+  return { status: 'ok', vehicleAuth, event, telemetry, persisted, notified, pushFailed, messagesSent, messagesAttempted, ntfied, shutoff };
 }

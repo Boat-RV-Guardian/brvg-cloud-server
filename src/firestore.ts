@@ -48,6 +48,12 @@ export function vehicleFromFields(vid: string, fields: any): VehicleConfig {
   if (whatsapp) v.sh_whatsapp_prefs = whatsapp;
   const telegram = strField(fields, 'sh_telegram_prefs');
   if (telegram) v.sh_telegram_prefs = telegram;
+  const ntfyTopic = strField(fields, 'sh_ntfy_topic');
+  if (ntfyTopic) v.ntfyTopic = ntfyTopic;
+  const ntfyServer = strField(fields, 'sh_ntfy_server');
+  if (ntfyServer) v.ntfyServer = ntfyServer;
+  const ntfyToken = strField(fields, 'sh_ntfy_token');
+  if (ntfyToken) v.ntfyToken = ntfyToken;
   return v;
 }
 
@@ -318,6 +324,9 @@ export class FirestoreStorage implements Storage {
     if (v.sh_sms_prefs) fields.sh_sms_prefs = { stringValue: v.sh_sms_prefs };
     if (v.sh_whatsapp_prefs) fields.sh_whatsapp_prefs = { stringValue: v.sh_whatsapp_prefs };
     if (v.sh_telegram_prefs) fields.sh_telegram_prefs = { stringValue: v.sh_telegram_prefs };
+    if (v.ntfyTopic) fields.sh_ntfy_topic = { stringValue: v.ntfyTopic };
+    if (v.ntfyServer) fields.sh_ntfy_server = { stringValue: v.ntfyServer };
+    if (v.ntfyToken) fields.sh_ntfy_token = { stringValue: v.ntfyToken };
     await this.patchDoc(`vehicles/${v.vid}`, fields, Object.keys(fields));
   }
 

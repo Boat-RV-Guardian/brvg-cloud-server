@@ -99,6 +99,18 @@
             <label for="v-secret">Webhook secret <span class="help-text">(devices send it as &amp;k=; blank keeps the existing one)</span></label>
             <input type="text" id="v-secret" placeholder="leave blank to keep current">
           </div>
+          <div class="form-group">
+            <label for="v-ntfy-topic">ntfy topic <span class="help-text">(free push — subscribe to it in the ntfy app; blank = no ntfy push)</span></label>
+            <input type="text" id="v-ntfy-topic" placeholder="e.g. brvg-myboat-7h3k9">
+          </div>
+          <div class="form-group">
+            <label for="v-ntfy-server">ntfy server <span class="help-text">(blank = https://ntfy.sh)</span></label>
+            <input type="text" id="v-ntfy-server" placeholder="https://ntfy.sh">
+          </div>
+          <div class="form-group">
+            <label for="v-ntfy-token">ntfy token <span class="help-text">(optional — for a protected topic/instance)</span></label>
+            <input type="text" id="v-ntfy-token" placeholder="optional">
+          </div>
           <button type="submit" class="btn primary">Save Vehicle</button>
         </form>
       </section>
