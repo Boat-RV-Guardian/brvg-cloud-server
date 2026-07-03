@@ -12,9 +12,17 @@ Point the app at it under **Settings → Vehicles → Advanced Vehicle Settings 
 - Receives Shelly device webhooks at **`/api/shelly`** (GET or POST — Shelly fires GET).
 - On a real flood/leak alarm, closes every configured LinkTap valve via the LinkTap cloud API.
 - Caches each device's last-known state so the app can show it off-LAN (tier-aware throttling).
-- Sends FCM push alerts to the vehicle's users (optional — needs Firebase creds).
+- Sends **FCM push** alerts to the vehicle's users (optional — needs Firebase creds; see the note below).
 - **`/admin`** (basic-auth) to set the instance API key, data-retention window, register vehicles
-  (with LinkTap creds), and map users to FCM tokens.
+  (with LinkTap creds + an optional per-vehicle webhook secret), and map users to FCM tokens.
+
+> **Remote alerts on self-host = FCM push only.** Third-party messaging (SMS / WhatsApp / Telegram) is a
+> **hosted-cloud-only** feature; the self-host server ships no message senders. For away/background push
+> you need your **own** Firebase project: FCM tokens are scoped to the Firebase project the app was built
+> with, so pushing to them requires that project's service-account key. In practice a self-hoster runs
+> their own Firebase project, builds the app with their `google-services.json`, sets `FIREBASE_*` here,
+> and maps each device's FCM token via `/admin`. Without that, **local (app-open) alerts and control
+> still work**, but background push does not.
 
 It relays sensor webhooks, alerts, valve shutoff, and history — it does **not** sync app
 configuration between devices (that's a hosted-cloud feature; with a self-hosted server each

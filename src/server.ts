@@ -9,11 +9,10 @@ import { join, extname } from 'node:path';
 import { FileStorage } from './storage.js';
 import { LinkTapCloud } from './linktap.js';
 import { createFcmNotifier, NullNotifier } from './notify.js';
-import { metaWhatsappSender, telegramSender } from './messaging.js';
 import { handleShellyWebhook } from './core.js';
 import { handleAdminApi, checkAdminAuth } from './admin.js';
 import { keyAuthorized } from './auth.js';
-import type { Deps, MessageSender } from './types.js';
+import type { Deps } from './types.js';
 
 const PORT = Number(process.env.PORT || 3030);
 const ADMIN_PORT = Number(process.env.ADMIN_PORT || 3031);
@@ -29,20 +28,10 @@ const notify = process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EM
     })
   : NullNotifier;
 
-const messageSenders: MessageSender[] = [];
-if (process.env.WHATSAPP_PHONE_ID && process.env.WHATSAPP_TOKEN) {
-  messageSenders.push(metaWhatsappSender({
-    phoneNumberId: process.env.WHATSAPP_PHONE_ID,
-    accessToken: process.env.WHATSAPP_TOKEN,
-  }));
-}
-if (process.env.TELEGRAM_BOT_TOKEN) {
-  messageSenders.push(telegramSender({
-    botToken: process.env.TELEGRAM_BOT_TOKEN,
-  }));
-}
-
-const deps: Deps = { storage, notify, messageSenders, linktap: LinkTapCloud, now: () => Date.now(), log: (m) => console.log(m) };
+// Third-party messaging (SMS / WhatsApp / Telegram) is a HOSTED-cloud-only feature — the self-host
+// server ships no message senders. Self-host remote alerts go through the app's built-in push (FCM),
+// which needs your own Firebase project + credentials (see the notify wiring above and docs/SELF_HOST).
+const deps: Deps = { storage, notify, linktap: LinkTapCloud, now: () => Date.now(), log: (m) => console.log(m) };
 
 function json(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json' });

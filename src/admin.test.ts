@@ -14,28 +14,34 @@ async function postVehicle(storage: MemoryStorage, body: any) {
 }
 
 describe('handleAdminApi — vehicle registration', () => {
-  it('stores the webhook secret + WhatsApp/Telegram prefs', async () => {
+  it('stores the webhook secret', async () => {
     const s = new MemoryStorage();
-    const wa = JSON.stringify({ addresses: ['+15551112222'], events: ['flood'] });
-    const tg = JSON.stringify({ addresses: ['@skipper'], events: ['flood'] });
-    const res = await postVehicle(s, { vid: 'v1', allowedUsers: ['u1'], webhookSecret: 'sek', sh_whatsapp_prefs: wa, sh_telegram_prefs: tg });
+    const res = await postVehicle(s, { vid: 'v1', allowedUsers: ['u1'], webhookSecret: 'sek' });
     expect(res.status).toBe(200);
     const v = await s.getVehicle('v1');
     expect(v?.webhookSecret).toBe('sek');
-    expect(v?.sh_whatsapp_prefs).toBe(wa);
-    expect(v?.sh_telegram_prefs).toBe(tg);
   });
 
-  it('preserves existing secret + prefs when a re-save omits them', async () => {
+  it('does NOT set third-party messaging destinations (hosted-cloud only)', async () => {
     const s = new MemoryStorage();
-    await postVehicle(s, { vid: 'v1', allowedUsers: ['u1'], webhookSecret: 'sek', sh_whatsapp_prefs: '{"addresses":["+1"],"events":["flood"]}' });
-    // Re-save with only a name change; the connector fields are omitted.
+    await postVehicle(s, {
+      vid: 'v1', allowedUsers: ['u1'],
+      sh_whatsapp_prefs: '{"addresses":["+1"],"events":["flood"]}',
+      sh_telegram_prefs: '{"addresses":["@x"],"events":["flood"]}',
+    });
+    const v = await s.getVehicle('v1');
+    expect(v?.sh_whatsapp_prefs).toBeUndefined();
+    expect(v?.sh_telegram_prefs).toBeUndefined();
+  });
+
+  it('preserves an existing webhook secret when a re-save omits it', async () => {
+    const s = new MemoryStorage();
+    await postVehicle(s, { vid: 'v1', allowedUsers: ['u1'], webhookSecret: 'sek' });
     const res = await postVehicle(s, { vid: 'v1', name: 'Renamed', allowedUsers: ['u1'] });
     expect(res.status).toBe(200);
     const v = await s.getVehicle('v1');
     expect(v?.name).toBe('Renamed');
-    expect(v?.webhookSecret).toBe('sek');                  // not wiped
-    expect(v?.sh_whatsapp_prefs).toContain('+1');          // not wiped
+    expect(v?.webhookSecret).toBe('sek'); // not wiped
   });
 
   it('rejects a vehicle with no vid', async () => {
