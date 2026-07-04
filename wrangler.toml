@@ -10,6 +10,12 @@ main = "src/worker.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+# Task 7 cutover: api.boatrvguardian.com now routes to THIS worker (moved off the old
+# boat-rv-guardian-webhooks worker). Cloudflare allows one worker per custom domain.
+routes = [
+  { pattern = "api.boatrvguardian.com", custom_domain = true }
+]
+
 # [[d1_databases]]
 # binding = "DB"
 # database_name = "brvg"
