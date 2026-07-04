@@ -40,6 +40,8 @@ export interface LinkTapWebhookBody {
   workMode?: string;
   battery?: number | string;
   signal?: number | string;
+  /** flowMeterValue's rate field — LinkTap sends the flow rate here, in mL/min. */
+  vel?: number | string;
   vol?: number | string;
   value?: number | string;
   flow?: number | string;
@@ -146,7 +148,14 @@ export function parseLinkTapWebhook(body: LinkTapWebhookBody | null | undefined)
   if (!name) return null;
 
   const c = classifyLinkTapName(name);
-  const flow = c.kind === 'telemetry' ? num(body.flow ?? body.value ?? body.vol ?? body.content) : undefined;
+  // flowMeterValue carries the rate in `vel`, in mL/min (observed live: vel 14520 ≈ 14.5 L/min ≈
+  // 3.8 gal/min). Store flow in L/min (÷1000) to match the local-poll `speed` the app already renders.
+  // Fallbacks kept for robustness if a future payload uses a different field.
+  let flow: number | undefined;
+  if (c.kind === 'telemetry') {
+    const vel = num(body.vel);
+    flow = vel !== undefined ? vel / 1000 : num(body.flow ?? body.value ?? body.content);
+  }
 
   return {
     name,

@@ -104,14 +104,24 @@ describe('parseLinkTapWebhook', () => {
     expect(n).toMatchObject({ battery: 96, signal: -44 });
   });
 
-  it('extracts a flow reading for flowMeterValue from any of the likely fields', () => {
+  it('reads flowMeterValue flow from `vel` (mL/min) as L/min — the real payload shape', () => {
+    // Observed live: {"msg":"flowMeterValue", "vel":14520} → 14.52 L/min (≈ 3.8 gal/min).
+    expect(parseLinkTapWebhook({ ...base, msg: 'flowMeterValue', vel: 14520 })!.flow).toBeCloseTo(14.52, 5);
+    expect(parseLinkTapWebhook({ ...base, msg: 'flowMeterValue', vel: '5040' })!.flow).toBeCloseTo(5.04, 5);
+  });
+
+  it('falls back to value/content for flow when no `vel` is present', () => {
     expect(parseLinkTapWebhook({ ...base, event: 'flowMeterValue', value: 3.4 })!.flow).toBe(3.4);
-    expect(parseLinkTapWebhook({ ...base, event: 'flowMeterValue', vol: '1200' })!.flow).toBe(1200);
     expect(parseLinkTapWebhook({ ...base, event: 'flowMeterValue', content: '4.15 GPM' })!.flow).toBe(4.15);
   });
 
   it('does not attach flow to non-telemetry events even if numeric fields are present', () => {
     const n = parseLinkTapWebhook({ ...base, event: 'water cut-off alert', value: 9 })!;
     expect(n.flow).toBeUndefined();
+  });
+
+  it('parses the real wateringOn payload (msg field, battery as a "100%" string)', () => {
+    const n = parseLinkTapWebhook({ msg: 'wateringOn', gatewayId: 'GW', deviceId: 'DEV', battery: '100%', signal: 39, vel: 0, vol: 0 })!;
+    expect(n).toMatchObject({ name: 'wateringOn', watering: true, battery: 100, signal: 39 });
   });
 });
