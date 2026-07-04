@@ -9,7 +9,7 @@ import { LinkTapCloud } from './linktap.js';
 import { createFcmNotifier, NullNotifier } from './notify.js';
 import { twilioSmsSender, metaWhatsappSender, telegramSender } from './messaging.js';
 import { ntfyClient } from './ntfy.js';
-import { keyAuthorized } from './auth.js';
+import { keyAuthorized, safeEqual } from './auth.js';
 import { resolveRole, canControl, validateControlCommand, type ControlAction } from './authz.js';
 import { isTrialEligible, trialEndsAtFrom, isTrialExpired, historyRetentionDaysForTier, historyDocsToPrune } from './retention.js';
 import type { Deps, Storage } from './types.js';
@@ -24,6 +24,8 @@ export interface Env {
   WHATSAPP_PHONE_ID?: string;
   WHATSAPP_TOKEN?: string;
   TELEGRAM_BOT_TOKEN?: string;
+  /** Shared secret for the LinkTap webhook: registered URL carries `?t=<secret>`; required when set. */
+  LINKTAP_WEBHOOK_SECRET?: string;
 }
 
 interface ExecutionContext {
@@ -246,8 +248,12 @@ export default {
       }
 
       // LinkTap webhook callbacks (setWebHookUrl). POST JSON; routed to a vehicle by gatewayId.
-      // TODO(auth): before registering this live, gate on a shared secret embedded in the registered URL.
+      // Auth: when LINKTAP_WEBHOOK_SECRET is set, the registered URL must carry the matching `?t=`
+      // (timing-safe). Required for the public/hosted deploy — set it before registering the webhook.
       if (url.pathname === '/api/linktap' && request.method === 'POST') {
+        if (env.LINKTAP_WEBHOOK_SECRET && !safeEqual(env.LINKTAP_WEBHOOK_SECRET, url.searchParams.get('t'))) {
+          return json({ error: 'unauthorized' }, 401);
+        }
         let body: unknown = null;
         try { body = await request.json(); } catch { /* leave null → ignored */ }
         const result = await handleLinkTapWebhook(body as any, deps);

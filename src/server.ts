@@ -13,7 +13,7 @@ import { ntfyClient } from './ntfy.js';
 import { handleShellyWebhook } from './core.js';
 import { handleLinkTapWebhook } from './linktapCore.js';
 import { handleAdminApi, checkAdminAuth } from './admin.js';
-import { keyAuthorized } from './auth.js';
+import { keyAuthorized, safeEqual } from './auth.js';
 import type { Deps } from './types.js';
 
 const PORT = Number(process.env.PORT || 3030);
@@ -70,8 +70,11 @@ const server = createServer(async (req, res) => {
     }
 
     // LinkTap webhook callbacks (setWebHookUrl). POST JSON; routed to a vehicle by gatewayId.
-    // TODO(auth): before registering this live, gate on a shared secret embedded in the registered URL.
+    // Auth: when the `linktapWebhookSecret` setting is set, the registered URL must carry `?t=`
+    // (timing-safe). Set it in /admin before registering the webhook if the server is public.
     if (url.pathname === '/api/linktap' && req.method === 'POST') {
+      const secret = await storage.getSetting('linktapWebhookSecret');
+      if (secret && !safeEqual(secret, url.searchParams.get('t'))) return json(res, 401, { error: 'unauthorized' });
       let body: unknown = null;
       try { body = JSON.parse(await readBody(req)); } catch { /* leave null → ignored */ }
       const result = await handleLinkTapWebhook(body as any, deps);

@@ -3,6 +3,7 @@
 #
 #   npx wrangler d1 create brvg               # once — copy the database_id below
 #   npx wrangler secret put FIREBASE_PROJECT_ID      # + CLIENT_EMAIL + PRIVATE_KEY (optional, for FCM push)
+#   npx wrangler secret put LINKTAP_WEBHOOK_SECRET    # gate /api/linktap; register the webhook with ?t=<secret>
 #   npx wrangler deploy
 name = "brvg-cloud-worker"
 main = "src/worker.ts"
