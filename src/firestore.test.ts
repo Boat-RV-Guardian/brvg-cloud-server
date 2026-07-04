@@ -46,4 +46,12 @@ describe('vehicleFromFields', () => {
     });
     expect(v.linktap?.taplinkerIds).toEqual(['t1', 't2']);
   });
+
+  it('maps linktapAutoRecover from a boolean or "true" string, and leaves it undefined otherwise', () => {
+    const base = { allowedUsers: { arrayValue: { values: [s('u1')] } } };
+    expect(vehicleFromFields('v4', { ...base, lt_auto_recover: { booleanValue: true } }).linktapAutoRecover).toBe(true);
+    expect(vehicleFromFields('v5', { ...base, lt_auto_recover: s('true') }).linktapAutoRecover).toBe(true);
+    expect(vehicleFromFields('v6', { ...base }).linktapAutoRecover).toBeUndefined();
+    expect(vehicleFromFields('v7', { ...base, lt_auto_recover: { booleanValue: false } }).linktapAutoRecover).toBeUndefined();
+  });
 });
