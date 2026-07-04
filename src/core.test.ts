@@ -205,6 +205,39 @@ describe('per-vehicle webhook auth (SEC-4, Phase 1)', () => {
   });
 });
 
+describe('hosted multi-tenant auth (permanent SEC-4, no instance key)', () => {
+  const hosted = () => ({ ...deps(), multiTenant: true });
+  const withSecret = () => storage.putVehicle({
+    vid: 'v1', name: 'Boaty', tier: 'premium', allowedUsers: ['u1'], webhookSecret: 'sekret',
+    linktap: { username: 'u', apiKey: 'k', gatewayId: 'gw', taplinkerIds: ['t1', 't2'] },
+  });
+
+  it('accepts a request with the matching per-vehicle secret — and does NOT need an instance key', async () => {
+    // beforeEach sets allowUnauthenticated=true, but flip it off to prove the instance gate is skipped.
+    storage.setSetting('allowUnauthenticated', 'false');
+    withSecret();
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm', k: 'sekret' }), hosted());
+    expect(r.status).toBe('ok');
+    expect(r.vehicleAuth).toBe('ok');
+    expect(shutoffCalls).toHaveLength(2); // safety path runs for an authenticated request
+  });
+
+  it('REJECTS a vehicle with no secret (legacy) — strict, unlike self-host', async () => {
+    // beforeEach's v1 has no webhookSecret.
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm' }), hosted());
+    expect(r.status).toBe('unauthorized');
+    expect(r.vehicleAuth).toBe('legacy');
+    expect(shutoffCalls).toHaveLength(0); // rejected before the safety path
+  });
+
+  it('REJECTS a missing or wrong secret when one is set', async () => {
+    withSecret();
+    expect((await handleShellyWebhook(input({ event: 'flood.alarm' }), hosted())).status).toBe('unauthorized');
+    expect((await handleShellyWebhook(input({ event: 'flood.alarm', k: 'wrong' }), hosted())).status).toBe('unauthorized');
+    expect(shutoffCalls).toHaveLength(0);
+  });
+});
+
 describe('ntfy free push', () => {
   function ntfyStub() {
     const sent: Array<{ config: any; title: string; body: string }> = [];
