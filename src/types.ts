@@ -133,6 +133,12 @@ export interface Deps {
   linktap: LinkTapClient;
   /** Optional free push channel (ntfy). When set and a vehicle has an ntfy topic, alerts publish to it. */
   ntfy?: NtfyClient;
+  /**
+   * Deployment mode. `true` = the HOSTED multi-tenant worker: there is no single instance key, so the
+   * instance-key gate is skipped and every webhook MUST carry a matching per-vehicle `&k=` secret
+   * (strict SEC-4). `false`/unset = self-host: instance-key gate + phased SEC-4 (WEBHOOK_AUTH_REQUIRED).
+   */
+  multiTenant?: boolean;
   now: () => number;
   log?: (msg: string) => void;
 }

@@ -30,27 +30,35 @@ export interface ShellyWebhookInput {
 export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps): Promise<WebhookResult> {
   const { storage, notify, linktap, now, log } = deps;
 
-  // Auth: self-host servers are public endpoints, so the API key is how a device proves it belongs to
-  // this instance. FAILS CLOSED — a key-less instance rejects webhooks unless the operator explicitly
-  // set allowUnauthenticated=true (see keyAuthorized). Timing-safe compare.
-  const requiredKey = await storage.getSetting('apiKey');
-  const allowUnauth = (await storage.getSetting('allowUnauthenticated')) === 'true';
-  if (!keyAuthorized(requiredKey, allowUnauth, input.key)) {
-    return { status: 'unauthorized' };
+  // Instance-key gate — SELF-HOST ONLY. A self-host server is a single-tenant public endpoint, so the
+  // instance API key is how a device proves it belongs to this instance (FAILS CLOSED — a key-less
+  // instance rejects webhooks unless the operator set allowUnauthenticated=true). The HOSTED
+  // multi-tenant worker has no single instance key; it authenticates PER VEHICLE (below) and skips this.
+  if (!deps.multiTenant) {
+    const requiredKey = await storage.getSetting('apiKey');
+    const allowUnauth = (await storage.getSetting('allowUnauthenticated')) === 'true';
+    if (!keyAuthorized(requiredKey, allowUnauth, input.key)) {
+      return { status: 'unauthorized' };
+    }
   }
 
   if (!input.vid) return { status: 'missing_vid' };
   const vehicle = await storage.getVehicle(input.vid);
   if (!vehicle) return { status: 'vehicle_not_found' };
 
-  // Per-vehicle webhook auth (SEC-4). Phase 1: a vehicle with a webhookSecret whose request omits/mismatches
-  // `k` is still processed, but the state is reported so migration is observable. Once every device has
-  // re-registered with `&k=`, flip WEBHOOK_AUTH_REQUIRED to reject 'unauthenticated'.
+  // Per-vehicle webhook auth (SEC-4). Shelly fires a static URL, so a bearer secret in it (`&k=`) is the
+  // strongest thing it can carry.
+  //  - HOSTED (multiTenant): STRICT — the request MUST present a matching secret ('ok'). A vehicle with
+  //    no secret ('legacy') or a missing/wrong one ('unauthenticated') is REJECTED. This is the
+  //    permanent multi-tenant auth — no instance key, no allowUnauthenticated.
+  //  - SELF-HOST: phased — while WEBHOOK_AUTH_REQUIRED is false, an 'unauthenticated' request is still
+  //    processed (state reported) so provisioned devices migrate without breaking.
   const vehicleAuth = classifyVehicleWebhookAuth(vehicle.webhookSecret, input.k);
-  if (WEBHOOK_AUTH_REQUIRED && vehicleAuth === 'unauthenticated') {
+  if (deps.multiTenant) {
+    if (vehicleAuth !== 'ok') return { status: 'unauthorized', vehicleAuth };
+  } else if (WEBHOOK_AUTH_REQUIRED && vehicleAuth === 'unauthenticated') {
     return { status: 'unauthorized', vehicleAuth };
-  }
-  if (vehicleAuth === 'unauthenticated') {
+  } else if (vehicleAuth === 'unauthenticated') {
     log?.(`vehicle ${input.vid}: webhook missing/invalid per-vehicle secret (accepted — Phase 1)`);
   }
 

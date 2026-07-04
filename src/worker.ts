@@ -9,7 +9,7 @@ import { LinkTapCloud } from './linktap.js';
 import { createFcmNotifier, NullNotifier } from './notify.js';
 import { twilioSmsSender, metaWhatsappSender, telegramSender } from './messaging.js';
 import { ntfyClient } from './ntfy.js';
-import { keyAuthorized, safeEqual } from './auth.js';
+import { safeEqual, classifyVehicleWebhookAuth } from './auth.js';
 import { resolveRole, canControl, validateControlCommand, type ControlAction } from './authz.js';
 import { isTrialEligible, trialEndsAtFrom, isTrialExpired, historyRetentionDaysForTier, historyDocsToPrune } from './retention.js';
 import type { Deps, Storage } from './types.js';
@@ -75,7 +75,7 @@ function buildDeps(env: Env): { deps: Deps; storage: FirestoreStorage } | null {
     messageSenders.push(telegramSender({ botToken: env.TELEGRAM_BOT_TOKEN }));
   }
 
-  return { deps: { storage, notify, messageSenders, ntfy: ntfyClient, linktap: LinkTapCloud, now: () => Date.now(), log: (m) => console.log(m) }, storage };
+  return { deps: { storage, notify, messageSenders, ntfy: ntfyClient, linktap: LinkTapCloud, multiTenant: true, now: () => Date.now(), log: (m) => console.log(m) }, storage };
 }
 
 async function triggerLinkTapInstant(config: LinkTapCreds, action: ControlAction, durationMins: number): Promise<void> {
@@ -275,12 +275,16 @@ export default {
       }
 
       if (url.pathname === '/api/history') {
-        const requiredKey = await storage.getSetting('apiKey');
-        const allowUnauth = (await storage.getSetting('allowUnauthenticated')) === 'true';
-        if (!keyAuthorized(requiredKey, allowUnauth, url.searchParams.get('key'))) return json({ status: 'unauthorized' }, 401);
         const vid = url.searchParams.get('vid');
         const device = url.searchParams.get('device');
         if (!vid || !device) return json({ error: 'vid + device required' }, 400);
+        // Hosted multi-tenant auth: require the per-vehicle `&k=` secret (same as the webhook), not an
+        // instance key. A vehicle must have a secret and the request must match it.
+        const vh = await storage.getVehicle(vid);
+        if (!vh) return json({ error: 'vehicle not found' }, 404);
+        if (classifyVehicleWebhookAuth(vh.webhookSecret, url.searchParams.get('k')) !== 'ok') {
+          return json({ status: 'unauthorized' }, 401);
+        }
         const sinceParam = url.searchParams.get('since');
         const since = sinceParam ? Number(sinceParam) : undefined;
         const samples = await storage.getHistory(vid, device, Number.isFinite(since) ? since : undefined);
