@@ -29,10 +29,20 @@ describe('linkTapDeleteWebhook', () => {
 });
 
 describe('linkTapGetApiKey', () => {
-  it('returns the key from the message field and can request a rotation', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ result: 'ok', message: 'THE_KEY' }));
+  it('returns the key from the REAL success shape ({key}) — verified live, docs are wrong', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ key: 'THE_KEY' }));
     const key = await linkTapGetApiKey('u', 'pw', true);
     expect(key).toBe('THE_KEY');
     expect(JSON.parse((fetchMock.mock.calls[0][1] as any).body)).toEqual({ username: 'u', password: 'pw', replace: true });
+  });
+
+  it('throws the REAL error shape (bare {message}) instead of returning it as the key', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ message: 'Invalid password' }));
+    await expect(linkTapGetApiKey('u', 'bad')).rejects.toThrow(/Invalid password/);
+  });
+
+  it('still accepts the documented {result, message} success shape as a fallback', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ result: 'ok', message: 'THE_KEY' }));
+    await expect(linkTapGetApiKey('u', 'pw')).resolves.toBe('THE_KEY');
   });
 });

@@ -29,9 +29,23 @@ export async function linkTapDeleteWebhook(account: LinkTapAccount): Promise<voi
 }
 
 /**
- * Fetch (or rotate with `replace`) the account's API key. Returns the key (in the `message` field).
+ * Fetch (or rotate with `replace`) the account's API key.
  * The password is sent for this one call only — DO NOT persist it; store only the returned key.
+ *
+ * LinkTap's REAL responses (verified live 2026-07-07) don't match their docs: success is
+ * {"key":"<api key>"} and an error is {"message":"Invalid password"} — no `result` field on either.
+ * So `message` is the ERROR channel here; the doc-shape {result:'ok', message:key} is kept only as
+ * a fallback. (postForMessage's docs-based parsing would have returned "Invalid password" AS the key.)
  */
 export async function linkTapGetApiKey(username: string, password: string, replace = false): Promise<string> {
-  return postForMessage(ENDPOINTS.getApiKey, getApiKeyBody(username, password, replace));
+  const res = await fetch(ENDPOINTS.getApiKey, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(getApiKeyBody(username, password, replace)),
+  });
+  if (!res.ok) throw new Error(`LinkTap API failure: ${await res.text()}`);
+  const data: any = await res.json();
+  if (typeof data?.key === 'string' && data.key) return data.key;
+  if (data?.result && data.result !== 'error' && typeof data.message === 'string' && data.message) return data.message;
+  throw new Error(`LinkTap API error: ${typeof data?.message === 'string' && data.message ? data.message : 'no API key returned'}`);
 }
