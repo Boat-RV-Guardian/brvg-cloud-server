@@ -167,7 +167,7 @@ describe('device limits', () => {
   });
 });
 
-describe('per-vehicle webhook auth (SEC-4, Phase 1)', () => {
+describe('per-vehicle webhook auth (SEC-4, Phase 2 — WEBHOOK_AUTH_REQUIRED)', () => {
   it('reports legacy for a vehicle with no webhookSecret (accepted, unchanged behavior)', async () => {
     const r = await handleShellyWebhook(input({ event: 'flood.alarm' }), deps());
     expect(r.status).toBe('ok');
@@ -185,15 +185,15 @@ describe('per-vehicle webhook auth (SEC-4, Phase 1)', () => {
     expect(r.vehicleAuth).toBe('ok');
   });
 
-  it('Phase 1: still processes an unauthenticated request but reports the state', async () => {
+  it('Phase 2: REJECTS an unauthenticated request (secret set, wrong/missing k)', async () => {
     storage.putVehicle({
       vid: 'v1', name: 'Boaty', tier: 'premium', allowedUsers: ['u1'], webhookSecret: 'sekret',
       linktap: { username: 'u', apiKey: 'k', gatewayId: 'gw', taplinkerIds: ['t1', 't2'] },
     });
     const r = await handleShellyWebhook(input({ event: 'flood.alarm', k: 'wrong' }), deps());
-    expect(r.status).toBe('ok');               // Phase 1 accepts
+    expect(r.status).toBe('unauthorized');      // Phase 2 rejects
     expect(r.vehicleAuth).toBe('unauthenticated');
-    expect(shutoffCalls).toHaveLength(2);       // safety path still runs
+    expect(shutoffCalls).toHaveLength(0);       // no side effects on a rejected webhook
   });
 
   it('never stores the secret `k` into sensorState', async () => {

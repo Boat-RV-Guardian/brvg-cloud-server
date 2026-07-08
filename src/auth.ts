@@ -42,8 +42,8 @@ export function keyAuthorized(
 // provisioned device never breaks:
 //   'legacy'          — the vehicle has no webhookSecret (not migrated). Always accepted.
 //   'ok'              — a webhookSecret is set and the request's `k` matches.
-//   'unauthenticated' — a webhookSecret is set but `k` is missing/wrong. Phase 1 ACCEPTS (records the
-//                       state so migration is observable); flipping WEBHOOK_AUTH_REQUIRED rejects them.
+//   'unauthenticated' — a webhookSecret is set but `k` is missing/wrong. REJECTED (WEBHOOK_AUTH_REQUIRED
+//                       is now true; Phase 2). A 'legacy' vehicle (no secret set at all) is still accepted.
 
 export type VehicleWebhookAuthState = 'legacy' | 'ok' | 'unauthenticated';
 
@@ -57,8 +57,10 @@ export function classifyVehicleWebhookAuth(
 }
 
 /**
- * Phase toggle for SEC-4. While false (Phase 1), an 'unauthenticated' request is accepted (the state is
- * still reported) so provisioned devices keep working until they re-register with `&k=`. Flip to true
- * (Phase 2) ONLY once every active vehicle's devices have re-registered.
+ * Phase toggle for SEC-4 (self-host only; the hosted multi-tenant worker is always strict). Now **true
+ * (Phase 2)**: an 'unauthenticated' request — a vehicle that HAS a secret but the device presented a
+ * missing/wrong `k` — is REJECTED. A 'legacy' vehicle (no secret set at all) is still accepted, so an
+ * operator who never sets a secret is unaffected. Advanced to Phase 2 on 2026-07-08 after all active
+ * devices had re-registered with `&k=`; set back to false only to re-run a device migration.
  */
-export const WEBHOOK_AUTH_REQUIRED = false;
+export const WEBHOOK_AUTH_REQUIRED = true;
