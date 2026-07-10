@@ -41,6 +41,20 @@ export function canControl(role: Role | null): boolean {
   return role === 'admin' || role === 'control';
 }
 
+/**
+ * Tier gate for remote (off-LAN) control (open-tasks Task 6, server side): remote control is a
+ * paid feature — Basic and up. The client already skips the cloud relay for Free-plan vehicles;
+ * this closes the bypass where a modified client calls /api/control directly.
+ *
+ * Applied to OPEN only. CLOSE is never tier-gated: shutting the valve can only prevent damage,
+ * and the flood-shutoff safety chain must never be blocked by a plan check (the same reasoning
+ * as validateControlCommand always allowing close). An unset/legacy tier is grandfathered
+ * (mirrors retention.ts GRANDFATHERED_TIER='premium' / firestore.ts's read default).
+ */
+export function tierCanRemoteControl(tier: string | null | undefined): boolean {
+  return tier !== 'free';
+}
+
 export type ControlAction = 'open' | 'close';
 
 export interface ControlCommand {

@@ -10,7 +10,7 @@ import { createFcmNotifier, NullNotifier } from './notify.js';
 import { twilioSmsSender, metaWhatsappSender, telegramSender } from './messaging.js';
 import { ntfyClient } from './ntfy.js';
 import { safeEqual, classifyVehicleWebhookAuth } from './auth.js';
-import { resolveRole, canControl, validateControlCommand, type ControlAction } from './authz.js';
+import { resolveRole, canControl, tierCanRemoteControl, validateControlCommand, type ControlAction } from './authz.js';
 import { isTrialEligible, trialEndsAtFrom, isTrialExpired, historyRetentionDaysForTier, historyDocsToPrune } from './retention.js';
 import type { Deps, Storage } from './types.js';
 
@@ -122,6 +122,12 @@ async function handleControl(env: Env, request: Request, storage: FirestoreStora
 
   const role = resolveRole(members, v.allowedUsers, uid);
   if (!canControl(role)) return json({ error: 'forbidden: role cannot control', role }, 403);
+
+  // Task 6 (server side): remote OPEN is a paid feature — Basic and up. CLOSE is never
+  // tier-gated (a shutoff can only prevent damage; the safety chain must not be plan-blocked).
+  if (action === 'open' && !tierCanRemoteControl(v.tier)) {
+    return json({ error: 'forbidden: plan does not include remote control', tier: v.tier }, 403);
+  }
 
   const valRes = validateControlCommand({ action, durationSec: body?.durationSec, volumeLimitLiters: body?.volumeLimitLiters });
   if (!valRes.ok) return json({ error: valRes.error }, 400);
