@@ -67,6 +67,23 @@ describe('telemetry', () => {
     expect((await storage.getSensorState('v1', 'dev1'))?.extra.v).toBe('12.6');
   });
 
+  it('MERGES separate-event telemetry so temp + humidity coexist (Shelly H&T)', async () => {
+    // H&T sends temperature and humidity as SEPARATE webhooks; a plain overwrite dropped whichever
+    // fired first. After the merge fix, the cache should hold both.
+    await handleShellyWebhook(input({ event: 'temperature.change', device: 'ht1', extra: { tC: '25.9' } } as any), deps());
+    await handleShellyWebhook(input({ event: 'humidity.change', device: 'ht1', extra: { rh: '42' } } as any), deps());
+    const s = await storage.getSensorState('v1', 'ht1');
+    expect(s?.extra.tC).toBe('25.9'); // survived the later humidity event
+    expect(s?.extra.rh).toBe('42');
+    expect(s?.event).toBe('humidity.change'); // event tracks the latest
+  });
+
+  it('newest value wins per key on merge', async () => {
+    await handleShellyWebhook(input({ event: 'temperature.change', device: 'ht2', extra: { tC: '20.0' } } as any), deps());
+    await handleShellyWebhook(input({ event: 'temperature.change', device: 'ht2', extra: { tC: '21.5' } } as any), deps());
+    expect((await storage.getSensorState('v1', 'ht2'))?.extra.tC).toBe('21.5');
+  });
+
   it('throttles telemetry persistence on lower tiers', async () => {
     storage.putVehicle({ vid: 'v1', tier: 'free', allowedUsers: ['u1'] }); // 30-min resolution
     const first = await handleShellyWebhook(input({ event: 'voltmeter.measurement' }), deps());

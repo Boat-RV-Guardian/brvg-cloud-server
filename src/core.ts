@@ -67,11 +67,17 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
   const isFlood = isFloodShutoff(event);
   const telemetry = isTelemetry(event);
   const nowMs = now();
-  const extra = extractSensorStateExtras(input.params);
+  const eventExtra = extractSensorStateExtras(input.params);
 
   // Enforce tier device limits (Free: 3, Basic: 6, Premium: 20)
   const limitForTier = (tier?: Tier) => (tier === 'free' ? 3 : tier === 'basic' ? 6 : 20);
   const prev = await storage.getSensorState(input.vid, device);
+
+  // MERGE this event's fields onto the last cached reading. Multi-metric sensors (e.g. Shelly H&T:
+  // temperature.change carries only tC, humidity.change only rh) send each reading as a SEPARATE
+  // webhook; a plain overwrite made the cache hold whichever fired last, so the app showed temp XOR
+  // humidity, never both. Newest value wins per key; independent readings accumulate.
+  const extra = { ...(prev?.extra || {}), ...eventExtra };
   if (!prev) { // New device
     const linkTapCount = vehicle.linktap?.taplinkerIds?.length || 0;
     const shellyCount = await storage.countSensorStates(input.vid);
