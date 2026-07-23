@@ -126,3 +126,7 @@ a Cloudflare Worker adapter sharing the core**. CI runs typecheck + tests + a Do
 `wrangler` dry-run that bundle-checks the Worker adapter. Remaining roadmap: unify with / retire the
 main repo's hosted worker (owner-driven cutover). See the main repo's `docs/SELF_HOST.md` +
 `open-tasks.md`.
+
+## Quality Assurance & Ecosystem
+
+This project is part of the Boat RV Guardian ecosystem. For overarching architecture, AI workflows, and the QA Audit checklist, please see the [brvg-ecosystem](../brvg-ecosystem) repository.
