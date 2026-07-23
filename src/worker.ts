@@ -12,7 +12,11 @@ import { ntfyClient } from './ntfy.js';
 import { safeEqual, classifyVehicleWebhookAuth } from './auth.js';
 import { resolveRole, canControl, tierCanRemoteControl, validateControlCommand, type ControlAction } from './authz.js';
 import { isTrialEligible, trialEndsAtFrom, isTrialExpired, historyRetentionDaysForTier, historyDocsToPrune } from './retention.js';
+import { shouldAlertSustainedOffline, offlineMinutes } from './linktapConnectivity.js';
 import type { Deps, Storage } from './types.js';
+
+// LinkTap gateway connectivity events (no per-device id) are cached in this one sensorState doc.
+const LINKTAP_GATEWAY_DOC = 'linktap_unknown';
 
 export interface Env {
   FIREBASE_PROJECT_ID?: string;
@@ -303,9 +307,47 @@ export default {
     }
   },
 
-  async scheduled(_event: any, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(event: any, env: Env, ctx: ExecutionContext): Promise<void> {
     const built = buildDeps(env);
     if (!built) return;
-    ctx.waitUntil(runDailyMaintenance(built.storage).catch((e) => console.error('maintenance failed:', e)));
+    // Two schedules (wrangler.toml crons): the frequent one runs the gateway-offline sweep; the daily
+    // one runs trial-expiry + history pruning. Anything unrecognised falls back to the sweep (cheap).
+    if (event?.cron === '12 4 * * *') {
+      ctx.waitUntil(runDailyMaintenance(built.storage).catch((e) => console.error('maintenance failed:', e)));
+    } else {
+      ctx.waitUntil(runGatewayOfflineSweep(built.deps).catch((e) => console.error('gw-offline sweep failed:', e)));
+    }
   },
 };
+
+/**
+ * Promote a SUSTAINED LinkTap gateway outage to a single push. The webhook handler debounces offline
+ * events (records when it went offline, stays silent); this sweep — run every few minutes — is what
+ * turns a genuine outage past the grace window into one alert, exactly once. A flap never gets here
+ * because it's already back online (state cleared) before the grace window elapses.
+ */
+async function runGatewayOfflineSweep(deps: Deps, now = Date.now()): Promise<void> {
+  const { storage, notify } = deps;
+  const vehicles = await storage.listVehicles();
+  let alerted = 0;
+  for (const v of vehicles) {
+    const st = await storage.getSensorState(v.vid, LINKTAP_GATEWAY_DOC);
+    if (!shouldAlertSustainedOffline(st?.extra, now)) continue;
+
+    const name = v.name || 'your vehicle';
+    const mins = offlineMinutes(st!.extra, now);
+    const title = `🚨 ${name}`;
+    const body = `LinkTap gateway has been offline ${mins}+ min. Check its power and Wi-Fi.`;
+    for (const uid of v.allowedUsers) {
+      const token = await storage.getUserFcmToken(uid);
+      if (token) await notify.sendPush(token, title, body);
+    }
+    if (deps.ntfy && v.ntfyTopic) {
+      await deps.ntfy.send({ server: v.ntfyServer || 'https://ntfy.sh', topic: v.ntfyTopic, token: v.ntfyToken }, title, body, 'high');
+    }
+    // Mark this episode alerted so we don't re-notify every sweep until it recovers.
+    await storage.putSensorState(v.vid, LINKTAP_GATEWAY_DOC, { event: st!.event, at: st!.at, extra: { ...st!.extra, offlineAlerted: '1' } });
+    alerted++;
+  }
+  if (alerted) console.log(`gw-offline sweep: ${vehicles.length} vehicles, ${alerted} newly alerted`);
+}

@@ -77,6 +77,36 @@ describe('alerts', () => {
     expect(r.notified).toBe(0);
     expect((await storage.getSensorState('v1', `linktap_${DEV}`))?.extra.battery).toBe('96');
   });
+
+  it('DEBOUNCES a gateway-offline flap: no push, but records the offline state', async () => {
+    // Gateway connectivity events carry no deviceId → they land in linktap_unknown.
+    const r = await handleLinkTapWebhook(body({ event: 'gateway offline', deviceId: '' }), deps());
+    expect(r.notified).toBe(0); // the whole point — a flap doesn't buzz your phone
+    expect(pushCalls).toHaveLength(0);
+    const st = await storage.getSensorState('v1', 'linktap_unknown');
+    expect(st?.extra.connState).toBe('offline');
+    expect(st?.extra.offlineSince).toBe(String(nowMs));
+  });
+
+  it('gateway back online after an alerted outage sends ONE recovery notice', async () => {
+    // Simulate the cron having alerted for this offline episode.
+    await storage.putSensorState('v1', 'linktap_unknown',
+      { event: 'gateway offline', at: nowMs, extra: { connState: 'offline', offlineSince: String(nowMs - 40 * 60_000), offlineAlerted: '1' } });
+    const r = await handleLinkTapWebhook(body({ event: 'gateway online', deviceId: '' }), deps());
+    expect(r.notified).toBe(1);
+    expect(pushCalls[0].title).toContain('✅');
+    expect(pushCalls[0].body).toMatch(/back online/i);
+    const st = await storage.getSensorState('v1', 'linktap_unknown');
+    expect(st?.extra.connState).toBe('online');
+    expect(st?.extra.offlineAlerted).toBeUndefined();
+  });
+
+  it('gateway back online after a mere FLAP (never alerted) stays silent', async () => {
+    await handleLinkTapWebhook(body({ event: 'gateway offline', deviceId: '' }), deps());
+    const r = await handleLinkTapWebhook(body({ event: 'gateway online', deviceId: '' }), deps());
+    expect(r.notified).toBe(0);
+    expect(pushCalls).toHaveLength(0);
+  });
 });
 
 describe('auto-recover (opt-in, benign only)', () => {

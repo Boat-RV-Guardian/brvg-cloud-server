@@ -10,6 +10,7 @@
 // which lands with the command-relay slice — here we only compute + report eligibility and log it.
 
 import { parseLinkTapWebhook, isAutoRecoverableAlarm, type LinkTapWebhookBody, type LinkTapKind, type LinkTapAlarmCode } from './linktapEvents.js';
+import { onConnectivityEvent } from './linktapConnectivity.js';
 import { sanitizeDevice, telemetryResolutionSecForTier, shouldPersistTelemetry, TELEMETRY_RESOLUTION_SEC } from './events.js';
 import { INSTANT_MODE_MAX_MIN } from './linktapCommands.js';
 import type { Deps, VehicleConfig } from './types.js';
@@ -70,7 +71,17 @@ export async function handleLinkTapWebhook(body: LinkTapWebhookBody | null | und
 
   // MERGE onto the last reading so a partial event (e.g. a battery-only telemetry tick) doesn't wipe
   // the known watering/flow state — newest value wins per key. Same rationale as the Shelly path.
-  const extra = { ...(prev?.extra || {}), ...eventExtra };
+  let extra = { ...(prev?.extra || {}), ...eventExtra };
+
+  // Connectivity is DEBOUNCED (see linktapConnectivity): an offline never pushes immediately — the
+  // cron promotes a sustained outage; online only pushes a recovery notice if we'd previously alerted.
+  // This is what stops the "gateway disconnected" spam from a gateway that's merely flapping.
+  let connRecovered = false;
+  if (ev.kind === 'connectivity') {
+    const c = onConnectivityEvent(extra, ev.name, nowMs);
+    extra = c.extra;
+    connRecovered = c.push === 'recovered';
+  }
 
   // Coalesce: throttle only the high-frequency telemetry stream (per tier); state/alarm always persist.
   let persisted = true;
@@ -85,11 +96,14 @@ export async function handleLinkTapWebhook(body: LinkTapWebhookBody | null | und
   }
 
   // Alerts — real alerts only (telemetry/state never push), reusing the Shelly dispatch pipeline.
+  // Connectivity is handled by the debounce above: the immediate alarm push is suppressed for it, and a
+  // 'recovered' transition sends a friendly back-online notice instead.
+  const alarmPush = ev.pushWorthy && ev.kind !== 'connectivity';
   let notified = 0, pushFailed = 0, messagesSent = 0, messagesAttempted = 0, ntfied = false;
-  if (ev.pushWorthy) {
+  if (alarmPush || connRecovered) {
     const name = vehicle.name || 'your vehicle';
-    const title = `🚨 ${name}`;
-    const body2 = ev.content || ev.title || `LinkTap: ${ev.name}`;
+    const title = connRecovered ? `✅ ${name}` : `🚨 ${name}`;
+    const body2 = connRecovered ? 'LinkTap gateway is back online.' : (ev.content || ev.title || `LinkTap: ${ev.name}`);
     for (const uid of vehicle.allowedUsers) {
       const token = await storage.getUserFcmToken(uid);
       if (token) (await notify.sendPush(token, title, body2)) ? notified++ : pushFailed++;
@@ -97,10 +111,10 @@ export async function handleLinkTapWebhook(body: LinkTapWebhookBody | null | und
     if (deps.ntfy && vehicle.ntfyTopic) {
       ntfied = await deps.ntfy.send(
         { server: vehicle.ntfyServer || 'https://ntfy.sh', topic: vehicle.ntfyTopic, token: vehicle.ntfyToken },
-        title, body2, 'high',
+        title, body2, connRecovered ? 'default' : 'high',
       );
     }
-    if (deps.messageSenders?.length) {
+    if (alarmPush && deps.messageSenders?.length) {
       const { parseMessagingPrefs, recipientsForEvent } = await import('./messaging.js');
       for (const sender of deps.messageSenders) {
         const rawPrefs = sender.id === 'sms' ? vehicle.sh_sms_prefs

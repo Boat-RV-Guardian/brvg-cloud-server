@@ -16,6 +16,15 @@ routes = [
   { pattern = "api.boatrvguardian.com", custom_domain = true }
 ]
 
+# Scheduled work (src/worker.ts `scheduled`), dispatched by cron string:
+#   */5 * * * *  — LinkTap gateway-offline sweep: promote a SUSTAINED outage (>30 min) to one push, so
+#                  a flapping gateway no longer spams "disconnected". (Was previously unscheduled — the
+#                  scheduled() handler existed but no cron was configured, so daily maintenance below
+#                  also never ran in prod. Both go live with this block.)
+#   12 4 * * *   — daily maintenance: expire lapsed Basic trials + prune history past the tier window.
+[triggers]
+crons = ["*/5 * * * *", "12 4 * * *"]
+
 # [[d1_databases]]
 # binding = "DB"
 # database_name = "brvg"
