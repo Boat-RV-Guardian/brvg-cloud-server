@@ -57,20 +57,26 @@ export async function handleLinkTapWebhook(body: LinkTapWebhookBody | null | und
   const telemetry = ev.kind === 'telemetry';
 
   // Build the cached-state extras (strings only, like Shelly sensorState.extra).
-  const extra: Record<string, string> = { kind: ev.kind };
-  if (ev.watering !== undefined) extra.watering = ev.watering ? '1' : '0';
-  if (ev.flow !== undefined) extra.flow = String(ev.flow);
-  if (ev.battery !== undefined) extra.battery = String(ev.battery);
-  if (ev.signal !== undefined) extra.signal = String(ev.signal);
-  if (ev.workMode) extra.workMode = ev.workMode;
-  if (ev.alarmCode) extra.alarm = ev.alarmCode;
+  const eventExtra: Record<string, string> = { kind: ev.kind };
+  if (ev.watering !== undefined) eventExtra.watering = ev.watering ? '1' : '0';
+  if (ev.flow !== undefined) eventExtra.flow = String(ev.flow);
+  if (ev.battery !== undefined) eventExtra.battery = String(ev.battery);
+  if (ev.signal !== undefined) eventExtra.signal = String(ev.signal);
+  if (ev.workMode) eventExtra.workMode = ev.workMode;
+  if (ev.alarmCode) eventExtra.alarm = ev.alarmCode;
+
+  // Read the last cached reading once (for the throttle AND the field merge below).
+  const prev = await storage.getSensorState(vehicle.vid, device);
+
+  // MERGE onto the last reading so a partial event (e.g. a battery-only telemetry tick) doesn't wipe
+  // the known watering/flow state — newest value wins per key. Same rationale as the Shelly path.
+  const extra = { ...(prev?.extra || {}), ...eventExtra };
 
   // Coalesce: throttle only the high-frequency telemetry stream (per tier); state/alarm always persist.
   let persisted = true;
   if (telemetry) {
     const resolutionSec = telemetryResolutionSecForTier(vehicle.tier);
     if (resolutionSec > TELEMETRY_RESOLUTION_SEC.premium) {
-      const prev = await storage.getSensorState(vehicle.vid, device);
       persisted = shouldPersistTelemetry(nowMs, prev?.at ?? null, resolutionSec);
     }
   }
