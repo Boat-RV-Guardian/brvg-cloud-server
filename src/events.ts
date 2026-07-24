@@ -2,7 +2,12 @@
 // worker's events.ts so the two stay in lockstep until a shared package unifies them. No I/O here.
 
 export const FLOOD_EVENT_RE = /flood|leak|alarm/i;
-export const TELEMETRY_EVENT_RE = /\.(measurement|change)$/i;
+// Periodic value events — cached + throttled, never pushed. Shelly names them inconsistently: the Uni
+// voltmeter + H&T use a dot (`voltmeter.change`, `temperature.change`) but the PM Mini shore sensor
+// uses an underscore (`pm1.voltage_change`). Matching only `.change`/`.measurement` let the PM Mini
+// event fall through as an ALERT — so every shore-voltage wiggle pushed a spurious "Sensor alert:
+// pm1.voltage_change". Accept either separator before the change/measurement suffix.
+export const TELEMETRY_EVENT_RE = /[._](measurement|change)$/i;
 export const ALARM_CLEARED_RE = /(?:_off|\.off)$/i;
 
 /** Periodic telemetry that should be cached but never pushed/triggered. */
