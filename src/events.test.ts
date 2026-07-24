@@ -75,9 +75,19 @@ describe('downsampleHistory', () => {
 });
 
 describe('isTelemetry', () => {
-  it('matches measurement/change suffixes', () => {
+  it('matches measurement/change suffixes with either separator (. or _)', () => {
     expect(isTelemetry('voltmeter.measurement')).toBe(true);
     expect(isTelemetry('temp.change')).toBe(true);
+    expect(isTelemetry('temperature.change')).toBe(true);
+    expect(isTelemetry('humidity.change')).toBe(true);
+    // The PM Mini shore sensor's real event name — must be telemetry (was pushing a false alert).
+    expect(isTelemetry('pm1.voltage_change')).toBe(true);
     expect(isTelemetry('flood.alarm')).toBe(false);
+    expect(isTelemetry('flood.alarm_off')).toBe(false);
+    expect(isTelemetry('button.push')).toBe(false);
+  });
+
+  it('a shore voltage_change is telemetry, not a flood or an alarm', () => {
+    expect(isFloodShutoff('pm1.voltage_change')).toBe(false);
   });
 });
