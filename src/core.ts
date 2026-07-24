@@ -3,7 +3,7 @@
 // testable without standing up a network, DB, or device — see core.test.ts.
 
 import {
-  isFloodShutoff, isTelemetry, extractSensorStateExtras, sanitizeDevice,
+  isFloodShutoff, isAlarmCleared, isTelemetry, extractSensorStateExtras, sanitizeDevice,
   telemetryResolutionSecForTier, shouldPersistTelemetry, TELEMETRY_RESOLUTION_SEC,
   historyRetentionDaysForTier,
 } from './events.js';
@@ -65,6 +65,7 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
   const event = input.event || 'sensor alert';
   const device = sanitizeDevice(input.device);
   const isFlood = isFloodShutoff(event);
+  const cleared = isAlarmCleared(event); // e.g. flood.alarm_off — an all-clear, never itself an alarm
   const telemetry = isTelemetry(event);
   const nowMs = now();
   const eventExtra = extractSensorStateExtras(input.params);
@@ -78,6 +79,15 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
   // webhook; a plain overwrite made the cache hold whichever fired last, so the app showed temp XOR
   // humidity, never both. Newest value wins per key; independent readings accumulate.
   const extra = { ...(prev?.extra || {}), ...eventExtra };
+
+  // Latch whether a flood alarm is currently ACTIVE, so the all-clear can be a calm confirmation
+  // after a REAL alarm — and stay SILENT for a routine "dry" status report. That silent case is the
+  // false "flood alarm off" push the owner saw: the sensor reported flood.alarm_off with no preceding
+  // alarm (a wake/heartbeat), and every non-telemetry event used to push a 🚨 alert.
+  const wasAlarmActive = prev?.extra?.alarmActive === '1';
+  if (isFlood) extra.alarmActive = '1';
+  else if (cleared) delete extra.alarmActive;
+
   if (!prev) { // New device
     const linkTapCount = vehicle.linktap?.taplinkerIds?.length || 0;
     const shellyCount = await storage.countSensorStates(input.vid);
@@ -133,15 +143,23 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
   }
 
   // Push: real alerts only (telemetry never pushes). Count real FCM acceptances.
+  //   - flood ON              → loud 🚨 (+ the shutoff above)
+  //   - alarm CLEARED         → calm ✅ ONLY if we'd latched an active alarm; a routine "off"/dry
+  //                             report with nothing latched is SILENT (kills the false flood-off push)
+  //   - any other alert       → 🚨 as before
   let notified = 0; let pushFailed = 0;
   let messagesSent = 0; let messagesAttempted = 0;
   let ntfied = false;
-  if (!telemetry) {
+  const clearedConfirm = cleared && wasAlarmActive; // real all-clear worth a calm note
+  const doPush = !telemetry && (!cleared || clearedConfirm);
+  if (doPush) {
     const name = vehicle.name || 'your vehicle';
-    const title = `🚨 ${name}`;
-    const body = isFlood
-      ? (shutoff?.ok ? 'Flood detected — valve closed automatically.' : `Flood detected: ${event}`)
-      : `Sensor alert: ${event}`;
+    const title = clearedConfirm ? `✅ ${name}` : `🚨 ${name}`;
+    const body = clearedConfirm
+      ? 'Flood cleared — the sensor reports dry again.'
+      : isFlood
+        ? (shutoff?.ok ? 'Flood detected — valve closed automatically.' : `Flood detected: ${event}`)
+        : `Sensor alert: ${event}`;
     for (const uid of vehicle.allowedUsers) {
       const token = await storage.getUserFcmToken(uid);
       if (token) {
@@ -154,11 +172,12 @@ export async function handleShellyWebhook(input: ShellyWebhookInput, deps: Deps)
     if (deps.ntfy && vehicle.ntfyTopic) {
       ntfied = await deps.ntfy.send(
         { server: vehicle.ntfyServer || 'https://ntfy.sh', topic: vehicle.ntfyTopic, token: vehicle.ntfyToken },
-        title, body, 'high',
+        title, body, clearedConfirm ? 'default' : 'high',
       );
     }
 
-    if (deps.messageSenders && deps.messageSenders.length > 0) {
+    // SMS/WhatsApp/Telegram are for real alerts only — never for an all-clear confirmation.
+    if (!clearedConfirm && deps.messageSenders && deps.messageSenders.length > 0) {
       for (const sender of deps.messageSenders) {
         let rawPrefs: string | undefined;
         if (sender.id === 'sms') rawPrefs = vehicle.sh_sms_prefs;
