@@ -45,7 +45,26 @@ describe('flood shutoff safety', () => {
     const r = await handleShellyWebhook(input({ event: 'flood.alarm_off' }), deps());
     expect(shutoffCalls).toHaveLength(0);
     expect(r.shutoff).toBeNull();
-    expect(r.notified).toBe(1); // still a (non-flood) alert push
+  });
+
+  it('is SILENT on a standalone flood.alarm_off (routine dry report, no prior alarm)', async () => {
+    // This was the owner-reported false "flood alarm off" push: an all-clear with nothing latched.
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm_off' }), deps());
+    expect(r.notified).toBe(0);
+    expect(pushCalls).toHaveLength(0);
+  });
+
+  it('sends ONE calm confirmation when a REAL flood alarm then clears', async () => {
+    await handleShellyWebhook(input({ event: 'flood.alarm' }), deps());   // latches alarmActive + loud push
+    pushCalls = [];
+    const r = await handleShellyWebhook(input({ event: 'flood.alarm_off' }), deps());
+    expect(r.notified).toBe(1);
+    expect(pushCalls[0].title).toContain('✅');
+    expect(pushCalls[0].body).toMatch(/cleared/i);
+    // And a SECOND standalone off (already cleared) is silent again.
+    pushCalls = [];
+    await handleShellyWebhook(input({ event: 'flood.alarm_off' }), deps());
+    expect(pushCalls).toHaveLength(0);
   });
 
   it('reports partial failure if a valve close throws', async () => {
